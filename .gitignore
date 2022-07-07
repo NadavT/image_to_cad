@@ -1,0 +1,6 @@
+venv/
+.ipynb_checkpoints/
+*.png
+*.ppm
+*.jpg
+xPhys.txt

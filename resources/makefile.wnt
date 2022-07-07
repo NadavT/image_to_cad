@@ -1,0 +1,20 @@
+#
+# This make file is for the XPhys_Txt2ppm utility for Windows NT
+#
+#				Gershon Elber, Jan 2000
+#
+
+# Includes generic definitions.
+include c:\irit\irit\makeflag.wnt
+
+OBJS =	xPhys_txt2ppm.$(IRIT_OBJ_PF)
+
+xPhys_txt2ppm$(IRIT_EXE_PF).exe: $(OBJS)
+	$(IRITCONLINK) -out:$@ $(OBJS) $(IRIT_LIBS) $(IRIT_MORE_LIBS) $(W32CONMTLIBS)
+	$(IRITMANIFEST) -manifest $@.manifest -outputresource:$@;1
+
+install: xPhys_txt2ppm$(IRIT_EXE_PF).exe
+	copy xPhys_txt2ppm$(IRIT_EXE_PF).exe $(IRIT_BIN_DIR)
+	del xPhys_txt2ppm$(IRIT_EXE_PF).exe 
+
+# Dependencies starts here - do not touch, generated automatically.
