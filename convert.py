@@ -1,4 +1,5 @@
 import math
+import sys
 import pyvoronoi
 import cv2
 import numpy as np
@@ -164,6 +165,9 @@ def draw_voronoi(image, pv, grayscale):
 
 
 def main():
+    global image_path
+    if len(sys.argv) >= 2:
+        image_path = sys.argv[1]
     cv2.namedWindow('Original', cv2.WINDOW_NORMAL)
     cv2.namedWindow('contours', cv2.WINDOW_NORMAL)
     print("Loading image...")
