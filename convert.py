@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 image_path = "resources/xPhys.ppm"
-# image_path = "square.png"
+# image_path = "resources/square.png"
 
 
 def load_image(path):
