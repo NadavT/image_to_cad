@@ -19,8 +19,12 @@ It is recommended to use a venv
 pip install -r requirements.txt
 ```
 
+### Running
+
 run (if an image file is not provided the `xPhys.ppm` file in the resources will be picked)
 
 ```sh
 python convert.py <image_file>
 ```
+
+press any key to continue after image loading, press escape to exit after the drawing is done.
