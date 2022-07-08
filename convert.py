@@ -13,6 +13,12 @@ def load_image(path):
     image = cv2.imread(path)
     image = cv2.resize(
         image, (image.shape[1] * 4, image.shape[0] * 4), interpolation=cv2.INTER_NEAREST_EXACT)
+    to_concatenate = np.zeros((image.shape[0], 1, 3), dtype=np.uint8) * 255
+    # image = np.concatenate((to_concatenate, image), axis=1)
+    # image = np.concatenate((image, to_concatenate), axis=1)
+    # to_concatenate = np.zeros((1, image.shape[1], 3), dtype=np.uint8) * 255
+    # image = np.concatenate((to_concatenate, image), axis=0)
+    # image = np.concatenate((image, to_concatenate), axis=0)
 
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -23,6 +29,30 @@ def load_image(path):
     # Find contours
     contours, hierarchy = cv2.findContours(
         edged, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    bounding = (
+        np.array([
+            np.array([np.array([1, 1])]),
+            np.array([np.array([1, image.shape[0]-1])]),
+            np.array([np.array([image.shape[1]-1, image.shape[0]-1])]),
+            np.array([np.array([image.shape[1]-1, 1])]),
+            # np.array([np.array([image.shape[1]-1, 1])]),
+        ]),
+        np.array([
+            np.array([np.array([1, 1])]),
+            np.array([np.array([image.shape[1]-1, 1])]),
+        ]),
+    )
+    bounding = (
+        np.array([np.array([np.array([0, i])])
+                 for i in range(image.shape[0] - 1)]),
+        np.array([np.array([np.array([i, 0])])
+                 for i in range(image.shape[1] - 1)]),
+        np.array([np.array([np.array([image.shape[1] - 1, i])])
+                 for i in range(image.shape[0] - 1)]),
+        np.array([np.array([np.array([i, image.shape[0] - 1])])
+                 for i in range(image.shape[1] - 1)]),
+    )
+    contours = contours + bounding
     return image, gray, contours, hierarchy
 
 
@@ -34,22 +64,13 @@ def calculate_voronoi(contours, width, height):
     pv = pyvoronoi.Pyvoronoi(1)
     for contour in contours:
         prev = None
-        first = None
         for line in contour:
             for vertex in line:
-                if first is None:
-                    first = vertex
                 if prev is not None:
                     pv.AddSegment([[prev[0], prev[1]], [vertex[0], vertex[1]]])
                     cv2.line(image_cont, (prev[0], prev[1]), (vertex[0], vertex[1]),
                              (0, 0, 0), thickness=1)
                 prev = vertex
-        # if first is not None:
-        #     pv.AddSegment(
-        #         [[contour[-1][-1][0], contour[-1][-1][1]], [first[0], first[1]]])
-        #     cv2.line(image_cont, (contour[-1][-1][0], contour[-1][-1][1]), (first[0], first[1]),
-        #              (0, 0, 0), thickness=1)
-        cv2.imshow("cont", image_cont)
         # cv2.waitKey(0)
 
     print("\t Finished adding segments")
@@ -65,7 +86,7 @@ def distance(a, b):
 def check_mask(image, x, y):
     if x < 0 or y < 0 or x >= image.shape[1] or y >= image.shape[0]:
         return False
-    return image[y][x] != 0
+    return image[y][x][2] == 255
 
 
 def draw_voronoi(image, pv, grayscale):
@@ -97,7 +118,7 @@ def draw_voronoi(image, pv, grayscale):
 
                 if startVertex != -1 and endVertex != -1:
                     max_distance = distance([startVertex.X, startVertex.Y], [
-                                            endVertex.X, endVertex.Y]) / 10
+                        endVertex.X, endVertex.Y])
                     if(edge.is_linear == True):
                         if (not math.isinf(vertices[edge.start].X) and not math.isinf(vertices[edge.end].X)
                                 and not math.isinf(vertices[edge.start].Y) and not math.isinf(vertices[edge.end].Y)
@@ -107,7 +128,7 @@ def draw_voronoi(image, pv, grayscale):
                                 vertices[edge.start].Y))
                             end_vertex = (int(vertices[edge.end].X),
                                           int(vertices[edge.end].Y))
-                            if check_mask(grayscale, start_vertex[0], start_vertex[1]) and check_mask(grayscale, end_vertex[0], end_vertex[1]):
+                            if check_mask(image, start_vertex[0], start_vertex[1]) and check_mask(image, end_vertex[0], end_vertex[1]):
                                 cv2.line(image_vor, start_vertex, end_vertex,
                                          (0, 255, 0), thickness=line_thickness)
                                 cv2.line(image, start_vertex, end_vertex,
@@ -117,7 +138,7 @@ def draw_voronoi(image, pv, grayscale):
                     elif max_distance > 0:
                         try:
                             points = pv.DiscretizeCurvedEdge(
-                                cell.edges[i], max_distance)
+                                cell.edges[i], max_distance, 1)
                             prev = None
                             for p in points:
                                 if prev is not None:
@@ -128,7 +149,7 @@ def draw_voronoi(image, pv, grayscale):
                                         start_vertex = (
                                             int(prev[0]), int(prev[1]))
                                         end_vertex = (int(p[0]), int(p[1]))
-                                        if check_mask(grayscale, start_vertex[0], start_vertex[1]) and check_mask(grayscale, end_vertex[0], end_vertex[1]):
+                                        if check_mask(image, start_vertex[0], start_vertex[1]) and check_mask(image, end_vertex[0], end_vertex[1]):
                                             cv2.line(image_vor, start_vertex, end_vertex,
                                                      (0, 255, 0), thickness=line_thickness)
                                             cv2.line(image, start_vertex, end_vertex,
@@ -157,11 +178,153 @@ def draw_voronoi(image, pv, grayscale):
 
     cv2.imshow("voronoi", image_vor)
     cv2.imshow("comb", image)
+    cv2.imwrite("results/voronoi.png", image_vor)
+    cv2.imwrite("results/combined.png", image)
     # cv2.resizeWindow('voronoi', 600, 600)
     # cv2.resizeWindow('comb', 600, 600)
     print("Done")
-    while cv2.waitKey(0) != 27:  # Escape key
-        pass
+
+
+def check_for_flower(image, i, j):
+    if i > 0 and j > 0 and i < image.shape[0] - 1 and j < image.shape[1] - 1:
+        left = image[i-1][j]
+        right = image[i+1][j]
+        up = image[i][j-1]
+        down = image[i][j+1]
+        if left[0] == 0 and left[1] == 0 and left[2] == 255 and \
+                right[0] == 0 and right[1] == 0 and right[2] == 255 and \
+                up[0] == 0 and up[1] == 0 and up[2] == 255 and \
+                down[0] == 0 and down[1] == 0 and down[2] == 255:
+            return True
+        return False
+
+
+def check_surrounding(image, i, j, new_red_pixels):
+    amount = 0
+    check_up_left = True
+    check_up_right = True
+    check_down_left = True
+    check_down_right = True
+    up = False
+    down = False
+    left = False
+    right = False
+    up_left = False
+    up_right = False
+    down_left = False
+    down_right = False
+    if i > 0:
+        pixel = image[i-1][j]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            amount += 1
+            check_up_left = False
+            check_up_right = False
+            up = True
+    if i < image.shape[0]-1:
+        pixel = image[i+1][j]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            amount += 1
+            check_down_left = False
+            check_down_right = False
+            down = True
+    if j > 0:
+        pixel = image[i][j-1]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            amount += 1
+            check_up_left = False
+            check_down_left = False
+            left = True
+    if j < image.shape[1]-1:
+        pixel = image[i][j+1]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            amount += 1
+            check_up_right = False
+            check_down_right = False
+            right = True
+    if i > 0 and j > 0:
+        pixel = image[i-1][j-1]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            if up and left:
+                amount -= 1
+            elif not up and not left:
+                amount += 1
+            up_left = True
+    if i > 0 and j < image.shape[1]-1:
+        pixel = image[i-1][j+1]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            if up and right:
+                amount -= 1
+            elif not up and not right:
+                amount += 1
+            up_right = True
+    if i < image.shape[0]-1 and j > 0:
+        pixel = image[i+1][j-1]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            if down and left:
+                amount -= 1
+            elif not down and not left:
+                amount += 1
+            down_left = True
+    if i < image.shape[0]-1 and j < image.shape[1]-1:
+        pixel = image[i+1][j+1]
+        if pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255:
+            if down and right:
+                amount -= 1
+            elif not down and not right:
+                amount += 1
+            down_right = True
+    # for col in range(max(i - 1, 0), min(i + 2, image.shape[0])):
+    #     for row in range(max(j - 1, 0), min(j + 2, image.shape[1])):
+    #         if image[col][row][0] == 0 and image[col][row][1] == 0 and image[col][row][2] == 255:  # Red
+    #             amount += 1
+    if amount < 2:
+        image[i, j] = [255, 255, 255]
+        return True
+    else:
+        if up_left and up_right and check_for_flower(image, i - 1, j):
+            image[i-1][j] = [0, 0, 255]
+            new_red_pixels.append((i-1, j))
+        if down_left and down_right and check_for_flower(image, i + 1, j):
+            image[i+1][j] = [0, 0, 255]
+            new_red_pixels.append((i+1, j))
+        if up_left and down_left and check_for_flower(image, i, j - 1):
+            image[i][j-1] = [0, 0, 255]
+            new_red_pixels.append((i, j-1))
+        if up_right and down_right and check_for_flower(image, i, j + 1):
+            image[i][j+1] = [0, 0, 255]
+            new_red_pixels.append((i, j+1))
+    return False
+
+
+def remove_hanging(image):
+    changed = True
+    cv2.namedWindow('processed', cv2.WINDOW_NORMAL)
+    red_pixels = []
+    print("Get red pixels")
+    for i in tqdm(range(image.shape[0])):
+        for j in range(image.shape[1]):
+            if image[i][j][0] == 0 and image[i][j][1] == 0 and image[i][j][2] == 255:  # Red
+                if i != 1 and i != image.shape[0] - 1 and j != 1 and j != image.shape[1] - 1:
+                    red_pixels.append((i, j))
+
+    print("Removing layers")
+    epoch = 0
+    while changed and len(red_pixels) > 0:
+        print(f"Epoch {epoch}")
+        new_red_pixels = []
+        if epoch % 1 == 0:
+            cv2.imshow('processed', image)
+            cv2.waitKey(0)
+        changed = False
+        for i, j in tqdm(reversed(red_pixels), total=len(red_pixels)):
+            if check_surrounding(image, i, j, new_red_pixels):
+                changed = True
+            else:
+                new_red_pixels.append((i, j))
+        red_pixels = new_red_pixels
+        epoch += 1
+    cv2.imshow('processed', image)
+    cv2.waitKey(0)
 
 
 def main():
@@ -173,14 +336,19 @@ def main():
     print("Loading image...")
     image, grayscale, contours, _ = load_image(image_path)
     cv2.imshow("Original", image)
+    cv2.imwrite("results/original.png", image)
     cv2.drawContours(image, contours, -1, (0xff, 0, 0), 1)
     cv2.imshow('contours', image)
+    cv2.imwrite("results/contours.png", image)
     print("Press any key to continue to calculation...")
     cv2.waitKey(0)
     pv = calculate_voronoi(contours, image.shape[1], image.shape[0])
     print("Finished calculating voronoi")
     print("drawing...")
     draw_voronoi(image, pv, grayscale)
+    remove_hanging(image)
+    while cv2.waitKey(0) != 27:  # Escape key
+        pass
     cv2.destroyAllWindows()
 
 
