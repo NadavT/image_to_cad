@@ -90,8 +90,8 @@ def check_mask(image, x, y):
 
 
 def distance_to_edge(point, edge_start, edge_end):
-    return abs((edge_end[0] - edge_start[0])*(edge_start[1] - point.Y) - (edge_start[0] - point.X)*(edge_end[1] -
-                                                                                                    edge_start[1])) / math.sqrt((edge_end[0] - edge_start[0])**2 + (edge_end[1] - edge_start[1])**2)
+    return abs((edge_end[0] - edge_start[0])*(edge_start[1] - point[1]) - (edge_start[0] - point[0])*(edge_end[1] -
+                                                                                                      edge_start[1])) / math.sqrt((edge_end[0] - edge_start[0])**2 + (edge_end[1] - edge_start[1])**2)
 
 
 def is_local_maxima_edge(cell, vertices, edges, segments, edge_index):
@@ -154,7 +154,7 @@ def draw_voronoi(image, pv, segments):
             # cv2.resizeWindow('comb', 600, 600)
             # cv2.waitKey(0)
             cell_vertices = []
-            incident_edge = edges[cell.site]
+            incident_segments = segments[cell.site]
             for i in range(len(cell.edges)):
                 edge_color = (edge_color + 1) % len(colors)
                 edge = edges[cell.edges[i]]
@@ -183,9 +183,9 @@ def draw_voronoi(image, pv, segments):
                                              (0, 0, 255), thickness=line_thickness)
                                     if start_vertex != end_vertex:
                                         graph.add_node(
-                                            start_vertex, x=start_vertex[0], y=start_vertex[1])
+                                            start_vertex, x=start_vertex[0], y=start_vertex[1], distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
                                         graph.add_node(
-                                            end_vertex, x=end_vertex[0], y=end_vertex[1])
+                                            end_vertex, x=end_vertex[0], y=end_vertex[1], distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
                                         graph.add_edge(
                                             start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
                                     cell_vertices.append(
@@ -212,9 +212,9 @@ def draw_voronoi(image, pv, segments):
                                                          (0, 0, 255), thickness=line_thickness)
                                                 if start_vertex != end_vertex:
                                                     graph.add_node(
-                                                        start_vertex, x=start_vertex[0], y=start_vertex[1])
+                                                        start_vertex, x=start_vertex[0], y=start_vertex[1], distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
                                                     graph.add_node(
-                                                        end_vertex, x=end_vertex[0], y=end_vertex[1])
+                                                        end_vertex, x=end_vertex[0], y=end_vertex[1], distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
                                                     graph.add_edge(
                                                         start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
                                                 cell_vertices.append(
@@ -248,15 +248,65 @@ def draw_voronoi(image, pv, segments):
     #             print(max_distance)
     #             points = pv.DiscretizeCurvedEdge(edge, max_distance)
 
-    for x, y in graph.nodes():
-        for i in range(x-1, x+2):
-            for j in range(y-1, y+2):
-                if (i != x or j != y) and (i, j) in graph.nodes():
-                    edges = nx.bfs_edges(graph, (x, y), depth_limit=3)
-                    nodes = [v for u, v in edges]
-                    if (i, j) not in nodes:
-                        graph.add_edge(
-                            (x, y), (i, j), length=math.dist((x, y), (i, j)))
+    # epoch = 0
+    print("Reducing graph...")
+    min_length = 4
+    small_edges = dict()
+    for u, v, data in graph.edges(data=True):
+        if data['length'] < min_length:
+            if graph.nodes[u]['distance_to_source'] >= graph.nodes[v]['distance_to_source']:
+                small_edges[(u, v)] = True
+            else:
+                small_edges[(v, u)] = True
+    total_len = len(small_edges)
+    with tqdm(total=total_len) as pbar:
+        while len(small_edges) > 0:
+            if total_len - len(small_edges) > 0:
+                pbar.update(total_len - len(small_edges))
+            total_len = len(small_edges)
+            for u, v in small_edges.keys():
+                for collapsed in graph[v]:
+                    if collapsed != u:
+                        assert v != collapsed
+                        assert not ((collapsed, v) in small_edges and (
+                            v, collapsed) in small_edges)
+                        if (collapsed, v) in small_edges:
+                            small_edges.pop((collapsed, v))
+                        elif (v, collapsed) in small_edges:
+                            small_edges.pop((v, collapsed))
+                        nx.set_edge_attributes(graph, {(v, collapsed): {
+                            'length': math.dist(u, collapsed)}})
+                        if math.dist(u, collapsed) < min_length:
+                            if graph.nodes[u]['distance_to_source'] >= graph.nodes[collapsed]['distance_to_source']:
+                                small_edges[(u, collapsed)] = True
+                            else:
+                                small_edges[(collapsed, u)] = True
+                nx.contracted_edge(
+                    graph, (u, v), self_loops=False, copy=False)
+                small_edges.pop((u, v))
+                if len(graph[u]) == 0:
+                    print(f"removed node {u}, {graph[u]}")
+                    graph.remove_node(u)
+                break
+
+    # while changed:
+    #     if epoch % 1000 == 0:
+    #         print(f"Epoch {epoch}")
+    #     changed = False
+    #     for node in graph.nodes():
+    #         items = list(graph[node].items())
+    #         for neighbor, data in items:
+    #             if data['length'] < 1:
+    #                 changed = True
+    #                 for collapsed in graph[neighbor]:
+    #                     nx.set_edge_attributes(graph, {(neighbor, collapsed): {
+    #                                            'length': math.dist(node, collapsed)}})
+    #                 nx.contracted_nodes(
+    #                     graph, node, neighbor, self_loops=False, copy=False)
+    #                 break
+    #         if changed:
+    #             break
+    #     epoch += 1
 
     cv2.imshow("voronoi", image_vor)
     cv2.imshow("comb", image)
@@ -265,7 +315,6 @@ def draw_voronoi(image, pv, segments):
     cv2.imwrite("results/combined.png", image)
     # cv2.resizeWindow('voronoi', 600, 600)
     # cv2.resizeWindow('comb', 600, 600)
-    print("Done")
     return graph
 
 
@@ -419,7 +468,7 @@ def remove_hanging_by_graph(original_image, graph):
         new_graph = graph.copy()
         changed = False
         leafs = [node for node in graph.nodes if graph.degree(node) == 1]
-        print(f"Epoch {epoch}")
+        print(f"\tEpoch {epoch}")
         # if epoch % 10 == 0:
         #     image = original_image.copy()
         #     for start, end in tqdm(graph.edges()):
@@ -446,11 +495,12 @@ def remove_hanging_by_graph(original_image, graph):
         graph = new_graph
         epoch += 1
     image = original_image.copy()
+    print("Drawing result...")
     for start, end in tqdm(graph.edges()):
-        cv2.line(image, start, end, (0, 0, 255), thickness=1)
+        cv2.line(image, start, end, (min(
+            graph.nodes[start]['distance_to_source'] * 5, 255), 0, 255), thickness=1)
     cv2.imshow('processed', image)
     cv2.imwrite('results/final_result.png', image)
-    print("Finished!")
 
 
 def main():
@@ -469,12 +519,16 @@ def main():
     cv2.imwrite("results/contours.png", image)
     print("Press any key to continue to calculation...")
     cv2.waitKey(0)
+    print("calculating voronoi...")
     pv, segments = calculate_voronoi(contours, image.shape[1], image.shape[0])
     print("Finished calculating voronoi")
-    print("drawing...")
+    print("drawing voronoi...")
     graph = draw_voronoi(image, pv, segments)
+    print("Finished drawing voronoi")
     # remove_hanging(image)
+    print("remove hanging...")
     remove_hanging_by_graph(original, graph)
+    print("Finished! press Escape key to exit")
     while cv2.waitKey(0) != 27:  # Escape key
         pass
     cv2.destroyAllWindows()
