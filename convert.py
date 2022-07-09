@@ -4,6 +4,8 @@ import pyvoronoi
 import cv2
 import numpy as np
 from tqdm import tqdm
+import networkx as nx
+import matplotlib.pyplot as plt
 image_path = "resources/xPhys.ppm"
 # image_path = "resources/square.png"
 
@@ -62,6 +64,7 @@ def calculate_voronoi(contours, width, height):
     print("\t Creating voronoi diagram")
     cv2.namedWindow('cont', cv2.WINDOW_NORMAL)
     pv = pyvoronoi.Pyvoronoi(1)
+    segments = []
     for contour in contours:
         prev = None
         for line in contour:
@@ -70,17 +73,15 @@ def calculate_voronoi(contours, width, height):
                     pv.AddSegment([[prev[0], prev[1]], [vertex[0], vertex[1]]])
                     cv2.line(image_cont, (prev[0], prev[1]), (vertex[0], vertex[1]),
                              (0, 0, 0), thickness=1)
+                    segments.append(
+                        ([prev[0], prev[1]], [vertex[0], vertex[1]]))
                 prev = vertex
         # cv2.waitKey(0)
 
     print("\t Finished adding segments")
     pv.Construct()
     print("\t Finished construction")
-    return pv
-
-
-def distance(a, b):
-    return math.dist(a, b)
+    return pv, segments
 
 
 def check_mask(image, x, y):
@@ -89,18 +90,63 @@ def check_mask(image, x, y):
     return image[y][x][2] == 255
 
 
-def draw_voronoi(image, pv, grayscale):
+def distance_to_edge(point, edge_start, edge_end):
+    return abs((edge_end[0] - edge_start[0])*(edge_start[1] - point.Y) - (edge_start[0] - point.X)*(edge_end[1] -
+                                                                                                    edge_start[1])) / math.sqrt((edge_end[0] - edge_start[0])**2 + (edge_end[1] - edge_start[1])**2)
+
+
+def is_local_maxima_edge(cell, vertices, edges, segments, edge_index):
+    edge_to_check = edges[edge_index]
+    incident_segments = segments[cell.site]
+    start_distance = distance_to_edge(
+        vertices[edge_to_check.start], incident_segments[0], incident_segments[1])
+    end_distance = distance_to_edge(
+        vertices[edge_to_check.end], incident_segments[0], incident_segments[1])
+    if max(start_distance, end_distance) <= 1 or abs(end_distance - start_distance) / max(start_distance, end_distance) > 0.5:
+        return False
+    return True
+
+
+def is_local_maxima_point(cell, vertices, edges, segments, edge_index):
+    edge_to_check = edges[edge_index]
+    start = (vertices[edge_to_check.start].X,
+             vertices[edge_to_check.start].Y)
+    site = (vertices[cell.site].X, vertices[cell.site].Y)
+    edge_to_check_distance = math.dist(start, site)
+    for edge in cell.edges:
+        start = (vertices[edges[edge].start].X,
+                 vertices[edges[edge].start].Y)
+        distance = math.dist(start, site)
+        if edge_to_check_distance < distance:
+            print("not local maxima")
+            return False
+    return True
+
+
+def is_local_maxima(cell, vertices, edges, segments, edge_index):
+    return True
+    # return is_local_maxima_edge(cell, vertices, edges, segments, edge_index)
+
+
+def draw_voronoi(image, pv, segments):
     # Create a blank image in numpy of width and height of image
     width, height = image.shape[1], image.shape[0]
-    image_vor = np.ones((height, width)) * 255
+    image_vor = np.ones((height, width, 3)) * 255
+    image_cells = np.ones((height, width, 3)) * 255
     edges = pv.GetEdges()
     vertices = pv.GetVertices()
     cells = pv.GetCells()
-
+    colors = [(0, 0, 255), (0, 255, 0), (0, 255, 255),
+              (255, 0, 255), (255, 255, 0), (255, 0, 0), (0, 0, 0), (0, 128, 255), (128, 255, 0)]
     cv2.namedWindow('voronoi', cv2.WINDOW_NORMAL)
     cv2.namedWindow('comb', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('cells', cv2.WINDOW_NORMAL)
+    graph = nx.Graph()
     line_thickness = 1
+    color = 0
+    edge_color = 0
     for cell in tqdm(cells):
+        color = (color + 1) % len(colors)
         if not cell.is_open:
             # print(pv.RetrieveSegment(cell), cell.is_degenerate)
             # cv2.imshow("voronoi", image_vor)
@@ -108,16 +154,18 @@ def draw_voronoi(image, pv, grayscale):
             # cv2.resizeWindow('voronoi', 600, 600)
             # cv2.resizeWindow('comb', 600, 600)
             # cv2.waitKey(0)
+            cell_vertices = []
+            incident_edge = edges[cell.site]
             for i in range(len(cell.edges)):
+                edge_color = (edge_color + 1) % len(colors)
                 edge = edges[cell.edges[i]]
                 startVertex = vertices[edge.start]
                 endVertex = vertices[edge.end]
-                cell_vertices = []
                 # if not edge.is_primary:
                 #     continue
 
                 if startVertex != -1 and endVertex != -1:
-                    max_distance = distance([startVertex.X, startVertex.Y], [
+                    distance = math.dist([startVertex.X, startVertex.Y], [
                         endVertex.X, endVertex.Y])
                     if(edge.is_linear == True):
                         if (not math.isinf(vertices[edge.start].X) and not math.isinf(vertices[edge.end].X)
@@ -129,16 +177,24 @@ def draw_voronoi(image, pv, grayscale):
                             end_vertex = (int(vertices[edge.end].X),
                                           int(vertices[edge.end].Y))
                             if check_mask(image, start_vertex[0], start_vertex[1]) and check_mask(image, end_vertex[0], end_vertex[1]):
-                                cv2.line(image_vor, start_vertex, end_vertex,
-                                         (0, 255, 0), thickness=line_thickness)
-                                cv2.line(image, start_vertex, end_vertex,
-                                         (0, 0, 255), thickness=line_thickness)
-                                cell_vertices.append(start_vertex)
-                                cell_vertices.append(end_vertex)
-                    elif max_distance > 0:
+                                if is_local_maxima(cell, vertices, edges, segments, cell.edges[i]):
+                                    cv2.line(image_vor, start_vertex, end_vertex,
+                                             colors[edge_color], thickness=line_thickness)
+                                    cv2.line(image, start_vertex, end_vertex,
+                                             (0, 0, 255), thickness=line_thickness)
+                                    if start_vertex != end_vertex:
+                                        graph.add_node(
+                                            start_vertex, x=start_vertex[0], y=start_vertex[1])
+                                        graph.add_node(
+                                            end_vertex, x=end_vertex[0], y=end_vertex[1])
+                                        graph.add_edge(
+                                            start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
+                                    cell_vertices.append(
+                                        start_vertex)
+                    elif distance > 0:
                         try:
                             points = pv.DiscretizeCurvedEdge(
-                                cell.edges[i], max_distance, 1)
+                                cell.edges[i], distance, 1)
                             prev = None
                             for p in points:
                                 if prev is not None:
@@ -150,17 +206,34 @@ def draw_voronoi(image, pv, grayscale):
                                             int(prev[0]), int(prev[1]))
                                         end_vertex = (int(p[0]), int(p[1]))
                                         if check_mask(image, start_vertex[0], start_vertex[1]) and check_mask(image, end_vertex[0], end_vertex[1]):
-                                            cv2.line(image_vor, start_vertex, end_vertex,
-                                                     (0, 255, 0), thickness=line_thickness)
-                                            cv2.line(image, start_vertex, end_vertex,
-                                                     (0, 0, 255), thickness=line_thickness)
-                                            cell_vertices.append(start_vertex)
-                                            cell_vertices.append(end_vertex)
+                                            if is_local_maxima(cell, vertices, edges, segments, cell.edges[i]):
+                                                cv2.line(image_vor, start_vertex, end_vertex,
+                                                         colors[edge_color], thickness=line_thickness)
+                                                cv2.line(image, start_vertex, end_vertex,
+                                                         (0, 0, 255), thickness=line_thickness)
+                                                if start_vertex != end_vertex:
+                                                    graph.add_node(
+                                                        start_vertex, x=start_vertex[0], y=start_vertex[1])
+                                                    graph.add_node(
+                                                        end_vertex, x=end_vertex[0], y=end_vertex[1])
+                                                    graph.add_edge(
+                                                        start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
+                                                cell_vertices.append(
+                                                    start_vertex)
                                 prev = p
                         except pyvoronoi.UnsolvableParabolaEquation:
                             print("UnsolvableParabolaEquation")
                         except ZeroDivisionError:
                             print("ZeroDivisionError")
+            if len(cell_vertices) > 0:
+                cv2.fillPoly(image_cells, pts=[np.array(
+                             cell_vertices)], color=colors[color])
+                # start_vertex = [int(vertices[incident_edge.start].X), int(
+                #     vertices[incident_edge.start].Y)]
+                # end_vertex = [int(vertices[incident_edge.end].X),
+                #               int(vertices[incident_edge.end].Y)]
+                # cv2.line(image_cells, start_vertex, end_vertex,
+                #          (0, 0, 0), thickness=line_thickness)
 
     # for edge in edges:
     #     if edge.start != -1 and edge.end != -1:
@@ -176,13 +249,25 @@ def draw_voronoi(image, pv, grayscale):
     #             print(max_distance)
     #             points = pv.DiscretizeCurvedEdge(edge, max_distance)
 
+    for x, y in graph.nodes():
+        for i in range(x-1, x+2):
+            for j in range(y-1, y+2):
+                if (i != x or j != y) and (i, j) in graph.nodes():
+                    edges = nx.bfs_edges(graph, (x, y), depth_limit=3)
+                    nodes = [v for u, v in edges]
+                    if (i, j) not in nodes:
+                        graph.add_edge(
+                            (x, y), (i, j), length=math.dist((x, y), (i, j)))
+
     cv2.imshow("voronoi", image_vor)
     cv2.imshow("comb", image)
+    cv2.imshow("cells", image_cells)
     cv2.imwrite("results/voronoi.png", image_vor)
     cv2.imwrite("results/combined.png", image)
     # cv2.resizeWindow('voronoi', 600, 600)
     # cv2.resizeWindow('comb', 600, 600)
     print("Done")
+    return graph
 
 
 def check_for_flower(image, i, j):
@@ -304,16 +389,17 @@ def remove_hanging(image):
     for i in tqdm(range(image.shape[0])):
         for j in range(image.shape[1]):
             if image[i][j][0] == 0 and image[i][j][1] == 0 and image[i][j][2] == 255:  # Red
-                red_pixels.append((i, j))
+                if i > 1 and j > 1 and i < image.shape[0]-2 and j < image.shape[1]-2:
+                    red_pixels.append((i, j))
 
     print("Removing layers")
     epoch = 0
     while changed and len(red_pixels) > 0:
         print(f"Epoch {epoch}")
         new_red_pixels = []
-        # if epoch % 1 == 0:
-        #     cv2.imshow('processed', image)
-        #     cv2.waitKey(0)
+        if epoch % 10 == 0:
+            cv2.imshow('processed', image)
+            cv2.waitKey(0)
         changed = False
         for i, j in tqdm(reversed(red_pixels), total=len(red_pixels)):
             if check_surrounding(image, i, j, new_red_pixels):
@@ -326,6 +412,48 @@ def remove_hanging(image):
     cv2.waitKey(0)
 
 
+def remove_hanging_by_graph(original_image, graph):
+    cv2.namedWindow('processed', cv2.WINDOW_NORMAL)
+    changed = True
+    epoch = 0
+    while changed:
+        new_graph = graph.copy()
+        changed = False
+        leafs = [node for node in graph.nodes if graph.degree(node) == 1]
+        print(f"Epoch {epoch}")
+        # if epoch % 10 == 0:
+        #     image = original_image.copy()
+        #     for start, end in tqdm(graph.edges()):
+        #         cv2.line(image, start, end, (0, 0, 255), thickness=1)
+        #     cv2.imshow('processed', image)
+        #     cv2.waitKey(0)
+        for leaf in tqdm(leafs):
+            to_remove = [leaf]
+            parent, data = list(graph[leaf].items())[0]
+            prev = leaf
+            leaf_length = data['length']
+            while graph.degree(parent) == 2:
+                to_remove.append(parent)
+                for node, data in graph[parent].items():
+                    if node != prev:
+                        leaf_length += data['length']
+                        prev = parent
+                        parent = node
+                        break
+            if leaf_length < 100:
+                changed = True
+                for node in to_remove:
+                    new_graph.remove_node(node)
+        graph = new_graph
+        epoch += 1
+    image = original_image.copy()
+    for start, end in tqdm(graph.edges()):
+        cv2.line(image, start, end, (0, 0, 255), thickness=1)
+    cv2.imshow('processed', image)
+    cv2.imwrite('results/final_result.png', image)
+    print("Finished!")
+
+
 def main():
     global image_path
     if len(sys.argv) >= 2:
@@ -334,18 +462,20 @@ def main():
     cv2.namedWindow('contours', cv2.WINDOW_NORMAL)
     print("Loading image...")
     image, grayscale, contours, _ = load_image(image_path)
-    cv2.imshow("Original", image)
-    cv2.imwrite("results/original.png", image)
+    original = image.copy()
+    cv2.imshow("Original", original)
+    cv2.imwrite("results/original.png", original)
     cv2.drawContours(image, contours, -1, (0xff, 0, 0), 1)
     cv2.imshow('contours', image)
     cv2.imwrite("results/contours.png", image)
     print("Press any key to continue to calculation...")
     cv2.waitKey(0)
-    pv = calculate_voronoi(contours, image.shape[1], image.shape[0])
+    pv, segments = calculate_voronoi(contours, image.shape[1], image.shape[0])
     print("Finished calculating voronoi")
     print("drawing...")
-    draw_voronoi(image, pv, grayscale)
-    remove_hanging(image)
+    graph = draw_voronoi(image, pv, segments)
+    # remove_hanging(image)
+    remove_hanging_by_graph(original, graph)
     while cv2.waitKey(0) != 27:  # Escape key
         pass
     cv2.destroyAllWindows()
