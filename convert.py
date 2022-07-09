@@ -247,6 +247,7 @@ def remove_hanging_by_graph(original_image, graph, threshold):
         graph = new_graph
         epoch += 1
     image = original_image.copy()
+    print("Finished removing hanging")
     print("Drawing result...")
     for start, end in tqdm(graph.edges()):
         cv2.line(image, start, end, (min(
