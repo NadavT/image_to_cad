@@ -304,17 +304,16 @@ def remove_hanging(image):
     for i in tqdm(range(image.shape[0])):
         for j in range(image.shape[1]):
             if image[i][j][0] == 0 and image[i][j][1] == 0 and image[i][j][2] == 255:  # Red
-                if i != 1 and i != image.shape[0] - 1 and j != 1 and j != image.shape[1] - 1:
-                    red_pixels.append((i, j))
+                red_pixels.append((i, j))
 
     print("Removing layers")
     epoch = 0
     while changed and len(red_pixels) > 0:
         print(f"Epoch {epoch}")
         new_red_pixels = []
-        if epoch % 1 == 0:
-            cv2.imshow('processed', image)
-            cv2.waitKey(0)
+        # if epoch % 1 == 0:
+        #     cv2.imshow('processed', image)
+        #     cv2.waitKey(0)
         changed = False
         for i, j in tqdm(reversed(red_pixels), total=len(red_pixels)):
             if check_surrounding(image, i, j, new_red_pixels):
