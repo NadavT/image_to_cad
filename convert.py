@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 import networkx as nx
-import matplotlib.pyplot as plt
 image_path = "resources/xPhys.ppm"
 # image_path = "resources/square.png"
 

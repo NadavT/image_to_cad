@@ -3,3 +3,4 @@ opencv-python==4.6.0.66
 wheel>=0.37
 pyvoronoi==1.0.7
 tqdm==4.64.0
+networkx==2.8.4
