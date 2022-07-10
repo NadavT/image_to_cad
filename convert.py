@@ -213,7 +213,7 @@ def reduce_graph(graph, reduction_proximity):
                 nx.contracted_edge(
                     graph, (u, v), self_loops=False, copy=False)
                 small_edges.pop((u, v))
-                if len(graph[u]) == 0:
+                if graph.degree(u) == 0:
                     print(f"removed node {u}, {graph[u]}")
                     graph.remove_node(u)
                 break
@@ -264,7 +264,7 @@ def main():
     parser.add_argument("--scale_factor", "-s",
                         help="Scale factor", default=4, type=int)
     parser.add_argument("--reduction_proximity", "-r",
-                        help="Reduction proximity", default=4, type=int)
+                        help="Reduction proximity", default=2, type=int)
     parser.add_argument("--hanging_leaf_threshold", "-lt",
                         help="Hanging leaf threshold", default=80, type=int)
     parser.add_argument("--debug", "-d", help="Debug",
