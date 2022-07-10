@@ -122,9 +122,9 @@ def draw_voronoi(image, pv, segments, debug=False):
                                              (0, 0, 255), thickness=line_thickness)
                                 if start_vertex != end_vertex:
                                     graph.add_node(
-                                        start_vertex, x=start_vertex[0], y=start_vertex[1], distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
+                                        start_vertex, distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
                                     graph.add_node(
-                                        end_vertex, x=end_vertex[0], y=end_vertex[1], distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
+                                        end_vertex, distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
                                     graph.add_edge(
                                         start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
                                 cell_vertices.append(
@@ -151,9 +151,9 @@ def draw_voronoi(image, pv, segments, debug=False):
                                                          (0, 0, 255), thickness=line_thickness)
                                             if start_vertex != end_vertex:
                                                 graph.add_node(
-                                                    start_vertex, x=start_vertex[0], y=start_vertex[1], distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
+                                                    start_vertex, distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
                                                 graph.add_node(
-                                                    end_vertex, x=end_vertex[0], y=end_vertex[1], distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
+                                                    end_vertex, distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
                                                 graph.add_edge(
                                                     start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
                                             cell_vertices.append(
