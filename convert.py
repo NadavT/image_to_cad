@@ -1,3 +1,4 @@
+from datetime import datetime
 import math
 import sys
 import pyvoronoi
@@ -10,19 +11,65 @@ import argparse
 image_path = "resources/xPhys.ppm"
 
 
-def load_image(path, scale_factor):
+def count_surrounding(image, x, y, checked, pbar):
+    count = 1
+    to_check = [(i, j) for i in range(max(x-1, 0), min(x+2, image.shape[0]))
+                for j in range(max(y-1, 0), min(y+2, image.shape[1])) if image[i][j] == 0 and not checked[i][j] and (i != x or j != y)]
+    for k, l in to_check:
+        checked[k][l] = True
+    to_paint = [(x, y)]
+    while len(to_check) > 0:
+        i, j = to_check.pop()
+        checked[i][j] = True
+        pbar.update(1)
+        to_paint.append((i, j))
+        count += 1
+        surrounding = [(k, l) for k in range(max(i-1, 0), min(i+2, image.shape[0]))
+                       for l in range(max(j-1, 0), min(j+2, image.shape[1])) if image[k][l] == 0 and not checked[k][l]]
+        for k, l in surrounding:
+            checked[k][l] = True
+        to_check.extend(surrounding)
+    return count, to_paint
+
+
+def remove_islands(image, threshold):
+    checked = [[False for _ in range(image.shape[1])]
+               for _ in range(image.shape[0])]
+    with tqdm(total=image.shape[0] * image.shape[1]) as pbar:
+        for i in range(image.shape[0]):
+            for j in range(image.shape[1]):
+                if image[i][j] == 0 and not checked[i][j]:
+                    count, to_paint = count_surrounding(
+                        image, i, j, checked, pbar)
+                    if count <= threshold:
+                        for x, y in to_paint:
+                            image[x][y] = 255
+                if not checked[i][j]:
+                    pbar.update(1)
+                    checked[i][j] = True
+    return image
+
+
+def load_image(path):
     # Get image
-    image = cv2.imread(path)
+    image = cv2.imread(path, flags=cv2.IMREAD_GRAYSCALE)
+    return image
+
+
+def preprocess_image(image, scale_factor):
+    print("\tRemoving islands")
+    image = remove_islands(image, threshold=4)
     image = cv2.resize(
         image, (image.shape[1] * scale_factor, image.shape[0] * scale_factor), interpolation=cv2.INTER_NEAREST_EXACT)
 
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Convert to colored
+    colored = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
     # Canny edges
-    edged = cv2.Canny(gray, 30, 200)
+    edged = cv2.Canny(image, 30, 200)
 
     # Find contours
+    print("\tFinding contours")
     contours, hierarchy = cv2.findContours(
         edged, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
     bounding = (
@@ -36,7 +83,7 @@ def load_image(path, scale_factor):
                  for i in range(image.shape[1] - 1)]),
     )
     contours = contours + bounding
-    return image, gray, contours, hierarchy
+    return colored, image, contours, hierarchy
 
 
 def calculate_voronoi(contours, width, height):
@@ -266,35 +313,48 @@ def main():
     parser.add_argument("--reduction_proximity", "-r",
                         help="Reduction proximity", default=2, type=int)
     parser.add_argument("--hanging_leaf_threshold", "-lt",
-                        help="Hanging leaf threshold", default=80, type=int)
+                        help="Hanging leaf threshold", default=250, type=int)
     parser.add_argument("--debug", "-d", help="Debug",
                         default=False, type=bool)
     args = parser.parse_args()
-    cv2.namedWindow('Original', cv2.WINDOW_NORMAL)
-    cv2.namedWindow('contours', cv2.WINDOW_NORMAL)
+
     print("Loading image...")
-    image, grayscale, contours, _ = load_image(
-        args.image, args.scale_factor)
-    original = image.copy()
-    cv2.imshow("Original", original)
-    cv2.imwrite("results/original.png", original)
-    cv2.drawContours(image, contours, -1, (0xff, 0, 0), 1)
-    cv2.imshow('contours', image)
-    cv2.imwrite("results/contours.png", image)
+    image = load_image(args.image)
+    cv2.namedWindow('Original', cv2.WINDOW_NORMAL)
+    cv2.imshow("Original", image)
+    cv2.imwrite("results/original.png", image)
     print("Press any key to continue to calculation...")
     cv2.waitKey(0)
+
+    start = datetime.now()
+
+    print("Preprocessing image...")
+    image, grayscale, contours, _ = preprocess_image(
+        image, args.scale_factor)
+    original = image.copy()
+    cv2.drawContours(image, contours, -1, (0xff, 0, 0), 1)
+    cv2.namedWindow('contours', cv2.WINDOW_NORMAL)
+    cv2.imshow('contours', image)
+    cv2.imwrite("results/contours.png", image)
+    print("Finished preprocessing")
+
     print("calculating voronoi...")
     pv, segments = calculate_voronoi(contours, image.shape[1], image.shape[0])
     print("Finished calculating voronoi")
     print("drawing voronoi...")
     graph = draw_voronoi(image, pv, segments, args.debug)
     print("Finished drawing voronoi")
+
     print("Reducing graph...")
     reduce_graph(graph, args.reduction_proximity)
     print("Finished reducing graph")
     print("remove hanging...")
     remove_hanging_by_graph(original, graph, args.hanging_leaf_threshold)
-    print("Finished! press Escape key to exit")
+
+    end = datetime.now()
+
+    print(f"Finished! Calculated in {(end - start)}")
+    print("press Escape key to exit")
     while cv2.waitKey(0) != 27:  # Escape key
         pass
     cv2.destroyAllWindows()
