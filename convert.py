@@ -56,9 +56,9 @@ def load_image(path):
     return image
 
 
-def preprocess_image(image, scale_factor):
+def preprocess_image(image, scale_factor, islands_threshold):
     print("\tRemoving islands")
-    image = remove_islands(image, threshold=4)
+    image = remove_islands(image, islands_threshold)
     image = cv2.resize(
         image, (image.shape[1] * scale_factor, image.shape[0] * scale_factor), interpolation=cv2.INTER_NEAREST_EXACT)
 
@@ -314,6 +314,8 @@ def main():
                         help="Reduction proximity", default=2, type=int)
     parser.add_argument("--hanging_leaf_threshold", "-lt",
                         help="Hanging leaf threshold", default=250, type=int)
+    parser.add_argument("--islands_threshold", "-it",
+                        help="Islands size threshold", default=4, type=int)
     parser.add_argument("--debug", "-d", help="Debug",
                         default=False, type=bool)
     args = parser.parse_args()
@@ -330,7 +332,7 @@ def main():
 
     print("Preprocessing image...")
     image, grayscale, contours, _ = preprocess_image(
-        image, args.scale_factor)
+        image, args.scale_factor, args.islands_threshold)
     original = image.copy()
     cv2.drawContours(image, contours, -1, (0xff, 0, 0), 1)
     cv2.namedWindow('contours', cv2.WINDOW_NORMAL)
