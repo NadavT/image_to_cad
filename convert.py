@@ -123,6 +123,7 @@ def distance_to_edge(point, edge_start, edge_end):
 
 def draw_voronoi(image, pv, segments, debug=False):
     if debug:
+        image = image.copy()
         # Create a blank image in numpy of width and height of image
         width, height = image.shape[1], image.shape[0]
         image_vor = np.ones((height, width, 3)) * 255
@@ -298,7 +299,8 @@ def remove_hanging_by_graph(graph, threshold):
             if leaf_length < threshold:
                 changed = True
                 for node in to_remove:
-                    new_graph.remove_node(node)
+                    if node in new_graph:
+                        new_graph.remove_node(node)
         graph = new_graph
         epoch += 1
     return graph
@@ -360,6 +362,16 @@ def collapse_junctions(graph, threshold):
                     break
 
 
+def draw_graph(image, graph, window_name, save_path=None):
+    for start, end in tqdm(graph.edges()):
+        cv2.line(image, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (min(
+            graph.nodes[start]['distance_to_source'] * 5, 255), 0, 255), thickness=1)
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.imshow(window_name, image)
+    if save_path is not None:
+        cv2.imwrite(save_path, image)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Photo to cad")
     parser.add_argument(
@@ -374,8 +386,7 @@ def main():
                         help="Islands size threshold", default=4, type=int)
     parser.add_argument("--junction_collapse_threshold", "-jt",
                         help="Junction collapse threshold", default=14, type=int)
-    parser.add_argument("--debug", "-d", help="Debug",
-                        default=False, type=bool)
+    parser.add_argument("-d", "--debug", help="Debug", action='store_true')
     args = parser.parse_args()
 
     print("Loading image...")
@@ -410,17 +421,14 @@ def main():
     print("remove hanging...")
     graph = remove_hanging_by_graph(graph, args.hanging_leaf_threshold)
     print("Finished removing hanging")
+    if args.debug:
+        draw_graph(image.copy(), graph, 'Before collapsing junctions')
     print("collapsing junctions...")
     collapse_junctions(graph, args.junction_collapse_threshold)
     print("Finished collapsing junctions")
 
     print("Drawing result...")
-    for start, end in tqdm(graph.edges()):
-        cv2.line(image, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (min(
-            graph.nodes[start]['distance_to_source'] * 5, 255), 0, 255), thickness=1)
-    cv2.namedWindow('final_result', cv2.WINDOW_NORMAL)
-    cv2.imshow('final_result', image)
-    cv2.imwrite('results/final_result.png', image)
+    draw_graph(image.copy(), graph, 'final_result', "results/final_result.png")
 
     end_time = datetime.now()
 
