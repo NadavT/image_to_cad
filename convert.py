@@ -141,7 +141,7 @@ def draw_voronoi(image, pv, segments, debug=False):
             color = (color + 1) % len(colors)
         if not cell.is_open:
             cell_vertices = []
-            incident_segments = segments[cell.site]
+            incident_segment = segments[cell.site]
             for i in range(len(cell.edges)):
                 if debug:
                     edge_color = (edge_color + 1) % len(colors)
@@ -169,9 +169,13 @@ def draw_voronoi(image, pv, segments, debug=False):
                                              (0, 0, 255), thickness=line_thickness)
                                 if start_vertex != end_vertex:
                                     graph.add_node(
-                                        start_vertex, distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
+                                        start_vertex, distance_to_source=distance_to_edge(
+                                            start_vertex, incident_segment[0], incident_segment[1]),
+                                        incident_segment=incident_segment, weight=1)
                                     graph.add_node(
-                                        end_vertex, distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
+                                        end_vertex, distance_to_source=distance_to_edge(
+                                            end_vertex, incident_segment[0], incident_segment[1]),
+                                        incident_segment=incident_segment, weight=1)
                                     graph.add_edge(
                                         start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
                                 cell_vertices.append(
@@ -198,9 +202,13 @@ def draw_voronoi(image, pv, segments, debug=False):
                                                          (0, 0, 255), thickness=line_thickness)
                                             if start_vertex != end_vertex:
                                                 graph.add_node(
-                                                    start_vertex, distance_to_source=distance_to_edge(start_vertex, incident_segments[0], incident_segments[1]))
+                                                    start_vertex, distance_to_source=distance_to_edge(
+                                                        start_vertex, incident_segment[0], incident_segment[1]),
+                                                    incident_segment=incident_segment, weight=1)
                                                 graph.add_node(
-                                                    end_vertex, distance_to_source=distance_to_edge(end_vertex, incident_segments[0], incident_segments[1]))
+                                                    end_vertex, distance_to_source=distance_to_edge(
+                                                        end_vertex, incident_segment[0], incident_segment[1]),
+                                                    incident_segment=incident_segment, weight=1)
                                                 graph.add_edge(
                                                     start_vertex, end_vertex, length=math.dist(start_vertex, end_vertex))
                                             cell_vertices.append(
@@ -266,7 +274,61 @@ def reduce_graph(graph, reduction_proximity):
                 break
 
 
-def remove_hanging_by_graph(original_image, graph, threshold):
+def reduce_graph_post_hanging(graph, reduction_proximity):
+    small_edges = dict()
+    for u, v, data in graph.edges(data=True):
+        if data['length'] < reduction_proximity:
+            if graph.nodes[u]['distance_to_source'] >= graph.nodes[v]['distance_to_source']:
+                small_edges[(u, v)] = True
+            else:
+                small_edges[(v, u)] = True
+    total_len = len(small_edges)
+    with tqdm(total=total_len) as pbar:
+        while len(small_edges) > 0:
+            if total_len - len(small_edges) > 0:
+                pbar.update(total_len - len(small_edges))
+            total_len = len(small_edges)
+            for u, v in small_edges.keys():
+                u_weight = graph.nodes[u]['weight']
+                v_weight = graph.nodes[v]['weight']
+                total_weight = u_weight + v_weight
+                new_pos = ((u[0] * u_weight + v[0] * v_weight) / total_weight,
+                           (u[1] * u_weight + v[1] * v_weight) / total_weight)
+                for collapsed in graph[v]:
+                    if collapsed != u:
+                        assert v != collapsed
+                        assert not ((collapsed, v) in small_edges and (
+                            v, collapsed) in small_edges)
+                        if (collapsed, v) in small_edges:
+                            small_edges.pop((collapsed, v))
+                        elif (v, collapsed) in small_edges:
+                            small_edges.pop((v, collapsed))
+                nx.contracted_edge(
+                    graph, (u, v), self_loops=False, copy=False)
+                small_edges.pop((u, v))
+                nx.relabel_nodes(graph, {u: new_pos}, copy=False)
+                incident_segment = graph.nodes[new_pos]['incident_segment']
+                nx.set_node_attributes(graph, {new_pos: {"distance_to_source": distance_to_edge(
+                    new_pos, incident_segment[0], incident_segment[1]), "weight": total_weight}})
+                if graph.degree(new_pos) == 0:
+                    graph.remove_node(new_pos)
+                for neighbor in graph[new_pos]:
+                    if (neighbor, u) in small_edges:
+                        small_edges.pop((neighbor, u))
+                    elif (u, neighbor) in small_edges:
+                        small_edges.pop((u, neighbor))
+                    nx.set_edge_attributes(graph, {(new_pos, neighbor): {
+                        'length': math.dist(new_pos, neighbor)}})
+                    if math.dist(new_pos, neighbor) < reduction_proximity:
+                        if graph.nodes[new_pos]['distance_to_source'] >= graph.nodes[neighbor]['distance_to_source']:
+                            small_edges[(new_pos, neighbor)] = True
+                        else:
+                            small_edges[(neighbor, new_pos)] = True
+
+                break
+
+
+def remove_hanging_by_graph(graph, threshold):
     changed = True
     epoch = 0
     while changed:
@@ -293,15 +355,8 @@ def remove_hanging_by_graph(original_image, graph, threshold):
                     new_graph.remove_node(node)
         graph = new_graph
         epoch += 1
-    image = original_image.copy()
     print("Finished removing hanging")
-    print("Drawing result...")
-    for start, end in tqdm(graph.edges()):
-        cv2.line(image, start, end, (min(
-            graph.nodes[start]['distance_to_source'] * 5, 255), 0, 255), thickness=1)
-    cv2.namedWindow('final_result', cv2.WINDOW_NORMAL)
-    cv2.imshow('final_result', image)
-    cv2.imwrite('results/final_result.png', image)
+    return graph
 
 
 def main():
@@ -328,7 +383,7 @@ def main():
     print("Press any key to continue to calculation...")
     cv2.waitKey(0)
 
-    start = datetime.now()
+    start_time = datetime.now()
 
     print("Preprocessing image...")
     image, grayscale, contours, _ = preprocess_image(
@@ -351,11 +406,22 @@ def main():
     reduce_graph(graph, args.reduction_proximity)
     print("Finished reducing graph")
     print("remove hanging...")
-    remove_hanging_by_graph(original, graph, args.hanging_leaf_threshold)
+    graph = remove_hanging_by_graph(graph, args.hanging_leaf_threshold)
+    # print("Reducing graph...")
+    # reduce_graph_post_hanging(graph, 12)
+    # print("Finished reducing graph")
 
-    end = datetime.now()
+    print("Drawing result...")
+    for start, end in tqdm(graph.edges()):
+        cv2.line(image, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (min(
+            graph.nodes[start]['distance_to_source'] * 5, 255), 0, 255), thickness=1)
+    cv2.namedWindow('final_result', cv2.WINDOW_NORMAL)
+    cv2.imshow('final_result', image)
+    cv2.imwrite('results/final_result.png', image)
 
-    print(f"Finished! Calculated in {(end - start)}")
+    end_time = datetime.now()
+
+    print(f"Finished! Calculated in {(end_time - start_time)}")
     print("press Escape key to exit")
     while cv2.waitKey(0) != 27:  # Escape key
         pass
