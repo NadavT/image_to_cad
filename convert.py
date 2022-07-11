@@ -274,60 +274,6 @@ def reduce_graph(graph, reduction_proximity):
                 break
 
 
-def reduce_graph_post_hanging(graph, reduction_proximity):
-    small_edges = dict()
-    for u, v, data in graph.edges(data=True):
-        if data['length'] < reduction_proximity:
-            if graph.nodes[u]['distance_to_source'] >= graph.nodes[v]['distance_to_source']:
-                small_edges[(u, v)] = True
-            else:
-                small_edges[(v, u)] = True
-    total_len = len(small_edges)
-    with tqdm(total=total_len) as pbar:
-        while len(small_edges) > 0:
-            if total_len - len(small_edges) > 0:
-                pbar.update(total_len - len(small_edges))
-            total_len = len(small_edges)
-            for u, v in small_edges.keys():
-                u_weight = graph.nodes[u]['weight']
-                v_weight = graph.nodes[v]['weight']
-                total_weight = u_weight + v_weight
-                new_pos = ((u[0] * u_weight + v[0] * v_weight) / total_weight,
-                           (u[1] * u_weight + v[1] * v_weight) / total_weight)
-                for collapsed in graph[v]:
-                    if collapsed != u:
-                        assert v != collapsed
-                        assert not ((collapsed, v) in small_edges and (
-                            v, collapsed) in small_edges)
-                        if (collapsed, v) in small_edges:
-                            small_edges.pop((collapsed, v))
-                        elif (v, collapsed) in small_edges:
-                            small_edges.pop((v, collapsed))
-                nx.contracted_edge(
-                    graph, (u, v), self_loops=False, copy=False)
-                small_edges.pop((u, v))
-                nx.relabel_nodes(graph, {u: new_pos}, copy=False)
-                incident_segment = graph.nodes[new_pos]['incident_segment']
-                nx.set_node_attributes(graph, {new_pos: {"distance_to_source": distance_to_edge(
-                    new_pos, incident_segment[0], incident_segment[1]), "weight": total_weight}})
-                if graph.degree(new_pos) == 0:
-                    graph.remove_node(new_pos)
-                for neighbor in graph[new_pos]:
-                    if (neighbor, u) in small_edges:
-                        small_edges.pop((neighbor, u))
-                    elif (u, neighbor) in small_edges:
-                        small_edges.pop((u, neighbor))
-                    nx.set_edge_attributes(graph, {(new_pos, neighbor): {
-                        'length': math.dist(new_pos, neighbor)}})
-                    if math.dist(new_pos, neighbor) < reduction_proximity:
-                        if graph.nodes[new_pos]['distance_to_source'] >= graph.nodes[neighbor]['distance_to_source']:
-                            small_edges[(new_pos, neighbor)] = True
-                        else:
-                            small_edges[(neighbor, new_pos)] = True
-
-                break
-
-
 def remove_hanging_by_graph(graph, threshold):
     changed = True
     epoch = 0
@@ -355,8 +301,63 @@ def remove_hanging_by_graph(graph, threshold):
                     new_graph.remove_node(node)
         graph = new_graph
         epoch += 1
-    print("Finished removing hanging")
     return graph
+
+
+def smooth_neighbors(graph, node, distance):
+    changed = True
+    while changed:
+        changed = False
+        for neighbor, data in graph[node].items():
+            if data['length'] < distance:
+                for collapsed in graph[neighbor]:
+                    nx.set_edge_attributes(graph, {(neighbor, collapsed): {
+                        'length': math.dist(node, collapsed)}})
+                nx.contracted_nodes(graph, node, neighbor,
+                                    self_loops=False, copy=False)
+                changed = True
+                break
+
+
+def collapse_junctions(graph, threshold):
+    junctions = [node for node in graph.nodes if graph.degree(node) > 2]
+    for junction in tqdm(junctions):
+        if junction not in graph.nodes:
+            continue
+        reset = True
+        while reset:
+            reset = False
+            for neighbor, data in graph[junction].items():
+                prev = junction
+                length = data['length']
+                route = []
+                while graph.degree(neighbor) == 2:
+                    route.append(neighbor)
+                    next_neighbor, data = [
+                        (node, data) for node, data in graph[neighbor].items() if node != prev][0]
+                    prev = neighbor
+                    neighbor = next_neighbor
+                    length += data['length']
+                    if length >= threshold:
+                        break
+                if length < threshold and graph.degree(neighbor) > 2:
+                    for node in route:
+                        graph.remove_node(node)
+                    nx.contracted_nodes(graph, junction, neighbor,
+                                        self_loops=False, copy=False)
+                    midpoint = (junction[0] + neighbor[0]) / \
+                        2, (junction[1] + neighbor[1]) / 2
+                    nx.relabel_nodes(graph, {junction: midpoint}, copy=False)
+                    incident_segment = graph.nodes[midpoint]['incident_segment']
+                    nx.set_node_attributes(graph, {midpoint: {
+                        'distance_to_source': distance_to_edge(midpoint, incident_segment[0], incident_segment[1])}})
+                    for neighbor in graph[midpoint]:
+                        nx.set_edge_attributes(graph, {(midpoint, neighbor): {
+                            'length': math.dist(midpoint, neighbor)}})
+                    smooth_neighbors(graph, midpoint, length)
+                    junction = midpoint
+                    reset = True
+                    break
 
 
 def main():
@@ -371,6 +372,8 @@ def main():
                         help="Hanging leaf threshold", default=250, type=int)
     parser.add_argument("--islands_threshold", "-it",
                         help="Islands size threshold", default=4, type=int)
+    parser.add_argument("--junction_collapse_threshold", "-jt",
+                        help="Junction collapse threshold", default=14, type=int)
     parser.add_argument("--debug", "-d", help="Debug",
                         default=False, type=bool)
     args = parser.parse_args()
@@ -388,7 +391,6 @@ def main():
     print("Preprocessing image...")
     image, grayscale, contours, _ = preprocess_image(
         image, args.scale_factor, args.islands_threshold)
-    original = image.copy()
     cv2.drawContours(image, contours, -1, (0xff, 0, 0), 1)
     cv2.namedWindow('contours', cv2.WINDOW_NORMAL)
     cv2.imshow('contours', image)
@@ -407,9 +409,10 @@ def main():
     print("Finished reducing graph")
     print("remove hanging...")
     graph = remove_hanging_by_graph(graph, args.hanging_leaf_threshold)
-    # print("Reducing graph...")
-    # reduce_graph_post_hanging(graph, 12)
-    # print("Finished reducing graph")
+    print("Finished removing hanging")
+    print("collapsing junctions...")
+    collapse_junctions(graph, args.junction_collapse_threshold)
+    print("Finished collapsing junctions")
 
     print("Drawing result...")
     for start, end in tqdm(graph.edges()):
