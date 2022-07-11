@@ -4,3 +4,4 @@ venv/
 *.ppm
 *.jpg
 xPhys.txt
+docs/_build

@@ -1,8 +1,8 @@
-# Photo to cad
+# Image to cad
 
 ## Goals
 
-Scripts to convert a photo to format a cad could use.
+Scripts to convert a given image to format a cad could use.
 
 ## Resources
 
@@ -24,7 +24,12 @@ pip install -r requirements.txt
 run (if an image file is not provided the `xPhys.ppm` file in the resources will be picked)
 
 ```sh
-python convert.py <image_file>
+# Optional: activate the venv
+python image_to_cad.py
 ```
 
 press any key to continue after image loading, press escape to exit after the drawing is done.
+
+### Help
+
+run `python image_to_cad.py -h` to get a helpful message on the parameters.
