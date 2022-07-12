@@ -1,6 +1,7 @@
 from datetime import datetime
 import math
 import sys
+import warnings
 import pyvoronoi
 import cv2
 import numpy as np
@@ -362,6 +363,48 @@ def collapse_junctions(graph, threshold):
                     break
 
 
+def smooth_graph(graph):
+    warnings.simplefilter('ignore', np.RankWarning)
+    junctions = [node for node in graph.nodes if graph.degree(
+        node) > 2 or graph.degree(node) == 1]
+    passed = []
+    for junction in tqdm(junctions):
+        passed.append(junction)
+        neighbors = list(graph[junction].items())
+        for neighbor, data in neighbors:
+            prev = junction
+            routes = []
+            current_route = []
+            if graph.degree(neighbor) == 2:
+                current_route.append(neighbor)
+            length = data['length']
+            while graph.degree(neighbor) == 2:
+                next_neighbor, data = [
+                    (node, data) for node, data in graph[neighbor].items() if node != prev][0]
+                prev = neighbor
+                length += data['length']
+                if length >= 300:
+                    routes.append(current_route)
+                    current_route = []
+                else:
+                    current_route.append(neighbor)
+                neighbor = next_neighbor
+            if len(current_route) > 0:
+                routes.append(current_route)
+            for route in routes:
+                if neighbor not in passed and len(route) > 0:
+                    x, y = zip(*route)
+                    optimized = np.polyfit(x, y, 3)
+                    polynomial = np.poly1d(optimized)
+                    corrected_route = {point: (point[0], polynomial(
+                        point[0])) for point in route}
+                    nx.relabel_nodes(graph, corrected_route, copy=False)
+                    for point in corrected_route.values():
+                        for neighbor in graph[point]:
+                            nx.set_edge_attributes(graph, {(point, neighbor): {
+                                'length': math.dist(point, neighbor)}})
+
+
 def draw_graph(image, graph, window_name, save_path=None):
     for start, end in tqdm(graph.edges()):
         cv2.line(image, (int(start[0]), int(start[1])), (int(end[0]), int(end[1])), (min(
@@ -426,6 +469,12 @@ def main():
     print("collapsing junctions...")
     collapse_junctions(graph, args.junction_collapse_threshold)
     print("Finished collapsing junctions")
+
+    draw_graph(image.copy(), graph, 'Before smoothing')
+
+    print("Smoothing graph...")
+    smooth_graph(graph)
+    print("Finished smoothing graph")
 
     print("Drawing result...")
     draw_graph(image.copy(), graph, 'final_result', "results/final_result.png")
