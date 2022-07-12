@@ -373,36 +373,45 @@ def smooth_graph(graph):
         neighbors = list(graph[junction].items())
         for neighbor, data in neighbors:
             prev = junction
-            routes = []
-            current_route = []
-            if graph.degree(neighbor) == 2:
-                current_route.append(neighbor)
+            route = []
             length = data['length']
+            route.append(junction)
             while graph.degree(neighbor) == 2:
                 next_neighbor, data = [
                     (node, data) for node, data in graph[neighbor].items() if node != prev][0]
                 prev = neighbor
                 length += data['length']
-                if length >= 300:
-                    routes.append(current_route)
-                    current_route = []
-                else:
-                    current_route.append(neighbor)
+                route.append(neighbor)
                 neighbor = next_neighbor
-            if len(current_route) > 0:
-                routes.append(current_route)
-            for route in routes:
-                if neighbor not in passed and len(route) > 0:
-                    x, y = zip(*route)
-                    optimized = np.polyfit(x, y, 3)
-                    polynomial = np.poly1d(optimized)
-                    corrected_route = {point: (point[0], polynomial(
-                        point[0])) for point in route}
-                    nx.relabel_nodes(graph, corrected_route, copy=False)
-                    for point in corrected_route.values():
-                        for neighbor in graph[point]:
-                            nx.set_edge_attributes(graph, {(point, neighbor): {
-                                'length': math.dist(point, neighbor)}})
+            route.append(neighbor)
+            if neighbor not in passed and len(route) > 0:
+                x, y = zip(*route)
+                max_deviation = float('inf')
+                corrected_route = None
+                splits = 1
+                while max_deviation > 3:
+                    x_parts = np.array_split(np.array(x), splits)
+                    y_parts = np.array_split(np.array(y), splits)
+                    corrected_route = dict()
+                    for x_part, y_part in zip(x_parts, y_parts):
+                        if len(x_part) > 0:
+                            optimized = np.polyfit(x_part, y_part, 3)
+                            polynomial = np.poly1d(optimized)
+                            corrected_route.update({point: (point[0], polynomial(
+                                point[0])) for point in zip(x_part, y_part)})
+                    max_deviation = max([math.dist(original, corrected)
+                                        for original, corrected in corrected_route.items()])
+                    splits += 1
+                if graph.degree(neighbor) != 2:
+                    corrected_route.pop(neighbor)
+                if graph.degree(junction) != 2:
+                    corrected_route.pop(junction)
+                nx.relabel_nodes(graph, corrected_route, copy=False)
+                for point in corrected_route.values():
+                    for neighbor in graph[point]:
+                        nx.set_edge_attributes(graph, {(point, neighbor): {
+                            'length': math.dist(point, neighbor)}})
+    graph.remove_edges_from(nx.selfloop_edges(graph))
 
 
 def draw_graph(image, graph, window_name, save_path=None):
@@ -475,6 +484,13 @@ def main():
     print("Smoothing graph...")
     smooth_graph(graph)
     print("Finished smoothing graph")
+
+    print("Reducing graph...")
+    reduce_graph(graph, args.reduction_proximity)
+    print("Finished reducing graph")
+    print("remove hanging...")
+    graph = remove_hanging_by_graph(graph, args.hanging_leaf_threshold)
+    print("Finished removing hanging")
 
     print("Drawing result...")
     draw_graph(image.copy(), graph, 'final_result', "results/final_result.png")
