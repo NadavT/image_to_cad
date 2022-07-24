@@ -389,7 +389,7 @@ def smooth_graph(graph):
                 max_deviation = float('inf')
                 corrected_route = None
                 splits = 1
-                while max_deviation > 3:
+                while max_deviation > 4:
                     x_parts = np.array_split(np.array(x), splits)
                     y_parts = np.array_split(np.array(y), splits)
                     corrected_route = dict()
@@ -479,7 +479,8 @@ def main():
     collapse_junctions(graph, args.junction_collapse_threshold)
     print("Finished collapsing junctions")
 
-    draw_graph(image.copy(), graph, 'Before smoothing')
+    draw_graph(image.copy(), graph,
+               'Before smoothing', 'results/before_smoothing.png')
 
     print("Smoothing graph...")
     smooth_graph(graph)
