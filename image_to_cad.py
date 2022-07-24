@@ -395,10 +395,16 @@ def smooth_graph(graph):
                     corrected_route = dict()
                     for x_part, y_part in zip(x_parts, y_parts):
                         if len(x_part) > 0:
-                            optimized = np.polyfit(x_part, y_part, 3)
-                            polynomial = np.poly1d(optimized)
-                            corrected_route.update({point: (point[0], polynomial(
-                                point[0])) for point in zip(x_part, y_part)})
+                            if max(x_part) - min(x_part) >= max(y_part) - min(y_part):
+                                optimized = np.polyfit(x_part, y_part, 3)
+                                polynomial = np.poly1d(optimized)
+                                corrected_route.update(
+                                    {point: (point[0], polynomial(point[0])) for point in zip(x_part, y_part)})
+                            else:
+                                optimized = np.polyfit(y_part, x_part, 3)
+                                polynomial = np.poly1d(optimized)
+                                corrected_route.update(
+                                    {point: (polynomial(point[1]), point[1]) for point in zip(x_part, y_part)})
                     max_deviation = max([math.dist(original, corrected)
                                         for original, corrected in corrected_route.items()])
                     splits += 1
