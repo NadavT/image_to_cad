@@ -430,6 +430,35 @@ def draw_graph(image, graph, window_name, save_path=None):
         cv2.imwrite(save_path, image)
 
 
+IRIT_TEMPLATE = """\
+[OBJECT SCENE
+    [OBJECT POLY
+{edges}
+    ]
+]
+"""
+IRIT_EDGE = """\
+        [POLYLINE 2
+            {start}
+            {end}
+        ]
+"""
+IRIT_POINT = "[{x} {y} {z}]"
+
+
+def export_irit(graph, save_path):
+    edges = []
+    for start, end in tqdm(graph.edges()):
+        edges.append(IRIT_EDGE.format(start=IRIT_POINT.format(x=start[0], y=start[1], z=graph.nodes[start]['distance_to_source']),
+                                      end=IRIT_POINT.format(x=end[0], y=end[1], z=graph.nodes[end]['distance_to_source'])))
+    # for node in graph.nodes():
+    #     points.append(IRIT_POINT.format(
+    #         x=node[0], y=node[1], z=graph.nodes[node]['distance_to_source']))
+    with open(save_path, 'w') as file:
+        file.write(IRIT_TEMPLATE.format(
+            edges='\n'.join(edges)))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Photo to cad")
     parser.add_argument(
@@ -444,6 +473,8 @@ def main():
                         help="Islands size threshold", default=4, type=int)
     parser.add_argument("--junction_collapse_threshold", "-jt",
                         help="Junction collapse threshold", default=14, type=int)
+    parser.add_argument("--irit_export_path", "-ie",
+                        help="Irit export path", default="scene.itd", type=str)
     parser.add_argument("-d", "--debug", help="Debug", action='store_true')
     args = parser.parse_args()
 
@@ -505,6 +536,8 @@ def main():
     end_time = datetime.now()
 
     print(f"Finished! Calculated in {(end_time - start_time)}")
+    print("exporting...")
+    export_irit(graph, args.irit_export_path)
     print("press Escape key to exit")
     while cv2.waitKey(0) != 27:  # Escape key
         pass
