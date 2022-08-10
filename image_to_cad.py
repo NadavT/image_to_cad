@@ -433,30 +433,127 @@ def draw_graph(image, graph, window_name, save_path=None):
 IRIT_TEMPLATE = """\
 [OBJECT SCENE
     [OBJECT POLY
-{edges}
+{polylines}
     ]
 ]
 """
-IRIT_EDGE = """\
-        [POLYLINE 2
-            {start}
-            {end}
+IRIT_POLYLINE = """\
+        [POLYLINE {amount}
+{points}
         ]
 """
-IRIT_POINT = "[{x} {y} {z}]"
+IRIT_POINT = "          [{x} {y} {z}]"
+
+
+def get_angle(p1, p2, midpoint):
+    a = math.dist(p1, midpoint)
+    b = math.dist(p2, midpoint)
+    c = math.dist(p1, p2)
+    return math.acos((a**2 + b**2 - c**2) / (2 * a * b))
+
+
+def get_polylines(graph):
+    print("\tGetting logical next...")
+    junctions = [node for node in graph.nodes if graph.degree(node) > 2]
+    logical_next = dict()
+    for junction in tqdm(junctions):
+        logical_next[junction] = dict()
+        for neighbor in graph[junction]:
+            if neighbor in logical_next[junction]:
+                continue
+            best_match = None
+            for second_neighbor in graph[junction]:
+                if second_neighbor != neighbor:
+                    if best_match is None or abs(math.pi - get_angle(neighbor, second_neighbor, junction)) < abs(math.pi - get_angle(neighbor, best_match, junction)):
+                        best_match = second_neighbor
+            logical_next[junction][neighbor] = best_match
+            logical_next[junction][best_match] = neighbor
+    polylines = []
+    edges = list(graph.edges())
+    endpoint = [node for node in graph.nodes if graph.degree(node) == 1]
+    candidates = []
+    print("\tPlotting...")
+    with tqdm(total=len(edges)) as pbar:
+        for node in endpoint:
+            line = [node]
+            prev = node
+            next_node = [next_node for next_node in graph[node]][0]
+            while next_node is not None:
+                if (prev, next_node) in edges:
+                    edge = (prev, next_node)
+                elif (next_node, prev) in edges:
+                    edge = (next_node, prev)
+                else:
+                    break
+                line.append(next_node)
+                edges.remove(edge)
+                pbar.update(1)
+                if graph.degree(next_node) == 2:
+                    next_node, prev = [
+                        node for node in graph[next_node] if node != prev][0], next_node
+                elif graph.degree(next_node) > 2:
+                    unused = [node for node in graph[next_node] if (
+                        prev, next_node) in edges or (next_node, prev) in edges]
+                    if len(unused) == 1:
+                        candidates.append((next_node, unused[0]))
+                    next_node, prev = logical_next[next_node][prev], next_node
+                else:
+                    next_node = None
+            polylines.append(line)
+        while len(edges) > 0:
+            if len(candidates) > 0:
+                edge = candidates.pop()
+                if (prev, next_node) in edges:
+                    edges.remove((prev, next_node))
+                elif (next_node, prev) in edges:
+                    edges.remove((next_node, prev))
+            else:
+                edge = edges.pop()
+            pbar.update(1)
+            line = [edge[0], edge[1]]
+            if graph.degree(edge[1]) == 1:
+                continue
+            prev = edge[1]
+            next_node = [node for node in graph[edge[1]] if node != edge[0]][0]
+            while next_node is not None:
+                if (prev, next_node) in edges:
+                    edge = (prev, next_node)
+                elif (next_node, prev) in edges:
+                    edge = (next_node, prev)
+                else:
+                    break
+                line.append(next_node)
+                edges.remove(edge)
+                pbar.update(1)
+                if graph.degree(next_node) == 2:
+                    next_node, prev = [
+                        node for node in graph[next_node] if node != prev][0], next_node
+                elif graph.degree(next_node) > 2:
+                    unused = [node for node in graph[next_node] if (
+                        prev, next_node) in edges or (next_node, prev) in edges]
+                    if len(unused) == 1:
+                        candidates.append((next_node, unused[0]))
+                    next_node, prev = logical_next[next_node][prev], next_node
+                else:
+                    next_node = None
+            polylines.append(line)
+    return polylines
 
 
 def export_irit(graph, save_path):
-    edges = []
-    for start, end in tqdm(graph.edges()):
-        edges.append(IRIT_EDGE.format(start=IRIT_POINT.format(x=start[0], y=start[1], z=graph.nodes[start]['distance_to_source']),
-                                      end=IRIT_POINT.format(x=end[0], y=end[1], z=graph.nodes[end]['distance_to_source'])))
-    # for node in graph.nodes():
-    #     points.append(IRIT_POINT.format(
-    #         x=node[0], y=node[1], z=graph.nodes[node]['distance_to_source']))
+    # edges = []
+    # for start, end in tqdm(graph.edges()):
+    #     edges.append(IRIT_EDGE.format(start=IRIT_POINT.format(x=start[0], y=start[1], z=graph.nodes[start]['distance_to_source']),
+    #                                   end=IRIT_POINT.format(x=end[0], y=end[1], z=graph.nodes[end]['distance_to_source'])))
+    # with open(save_path, 'w') as file:
+    #     file.write(IRIT_TEMPLATE.format(
+    #         edges='\n'.join(edges)))
+    irit_polylines = ""
+    for polyline in get_polylines(graph):
+        irit_polylines += IRIT_POLYLINE.format(amount=len(polyline),
+                                               points='\n'.join([IRIT_POINT.format(x=point[0], y=point[1], z=graph.nodes[point]['distance_to_source']) for point in polyline]))
     with open(save_path, 'w') as file:
-        file.write(IRIT_TEMPLATE.format(
-            edges='\n'.join(edges)))
+        file.write(IRIT_TEMPLATE.format(polylines=irit_polylines))
 
 
 def main():
