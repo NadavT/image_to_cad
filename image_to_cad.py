@@ -442,7 +442,7 @@ IRIT_POLYLINE = """\
 {points}
         ]
 """
-IRIT_POINT = "          [{x} {y} {z}]"
+IRIT_POINT = "          [{attr}{x} {y} {z}]"
 
 
 def get_angle(p1, p2, midpoint):
@@ -470,43 +470,20 @@ def get_polylines(graph):
             logical_next[junction][best_match] = neighbor
     polylines = []
     edges = list(graph.edges())
-    endpoint = [node for node in graph.nodes if graph.degree(node) == 1]
-    candidates = []
+    endpoint = [(node, list(graph[node])[0])
+                for node in graph.nodes if graph.degree(node) == 1]
+    candidates = endpoint
     print("\tPlotting...")
     with tqdm(total=len(edges)) as pbar:
-        for node in endpoint:
-            line = [node]
-            prev = node
-            next_node = [next_node for next_node in graph[node]][0]
-            while next_node is not None:
-                if (prev, next_node) in edges:
-                    edge = (prev, next_node)
-                elif (next_node, prev) in edges:
-                    edge = (next_node, prev)
-                else:
-                    break
-                line.append(next_node)
-                edges.remove(edge)
-                pbar.update(1)
-                if graph.degree(next_node) == 2:
-                    next_node, prev = [
-                        node for node in graph[next_node] if node != prev][0], next_node
-                elif graph.degree(next_node) > 2:
-                    unused = [node for node in graph[next_node] if (
-                        prev, next_node) in edges or (next_node, prev) in edges]
-                    if len(unused) == 1:
-                        candidates.append((next_node, unused[0]))
-                    next_node, prev = logical_next[next_node][prev], next_node
-                else:
-                    next_node = None
-            polylines.append(line)
         while len(edges) > 0:
             if len(candidates) > 0:
                 edge = candidates.pop()
-                if (prev, next_node) in edges:
-                    edges.remove((prev, next_node))
-                elif (next_node, prev) in edges:
-                    edges.remove((next_node, prev))
+                if edge in edges:
+                    edges.remove(edge)
+                elif (edge[1], edge[0]) in edges:
+                    edges.remove((edge[1], edge[0]))
+                else:
+                    continue
             else:
                 edge = edges.pop()
             pbar.update(1)
@@ -529,8 +506,8 @@ def get_polylines(graph):
                     next_node, prev = [
                         node for node in graph[next_node] if node != prev][0], next_node
                 elif graph.degree(next_node) > 2:
-                    unused = [node for node in graph[next_node] if (
-                        prev, next_node) in edges or (next_node, prev) in edges]
+                    unused = [node for node in graph[next_node] if ((
+                        node, next_node) in edges or (next_node, node) in edges) and node != logical_next[next_node][prev]]
                     if len(unused) == 1:
                         candidates.append((next_node, unused[0]))
                     next_node, prev = logical_next[next_node][prev], next_node
@@ -549,9 +526,10 @@ def export_irit(graph, save_path):
     #     file.write(IRIT_TEMPLATE.format(
     #         edges='\n'.join(edges)))
     irit_polylines = ""
+    junctions = [node for node in graph.nodes if graph.degree(node) > 2]
     for polyline in get_polylines(graph):
         irit_polylines += IRIT_POLYLINE.format(amount=len(polyline),
-                                               points='\n'.join([IRIT_POINT.format(x=point[0], y=point[1], z=graph.nodes[point]['distance_to_source']) for point in polyline]))
+                                               points='\n'.join([IRIT_POINT.format(attr="[junction] " if point in junctions else "", x=point[0], y=point[1], z=graph.nodes[point]['distance_to_source']) for point in polyline]))
     with open(save_path, 'w') as file:
         file.write(IRIT_TEMPLATE.format(polylines=irit_polylines))
 
