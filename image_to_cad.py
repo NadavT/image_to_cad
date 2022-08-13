@@ -374,16 +374,20 @@ def smooth_graph(graph):
         for neighbor, data in neighbors:
             prev = junction
             route = []
+            weights = []
             length = data['length']
             route.append(junction)
+            weights.append(10000)
             while graph.degree(neighbor) == 2:
                 next_neighbor, data = [
                     (node, data) for node, data in graph[neighbor].items() if node != prev][0]
                 prev = neighbor
                 length += data['length']
                 route.append(neighbor)
+                weights.append(1)
                 neighbor = next_neighbor
             route.append(neighbor)
+            weights.append(10000)
             if neighbor not in passed and len(route) > 0:
                 x, y = zip(*route)
                 max_deviation = float('inf')
@@ -392,16 +396,19 @@ def smooth_graph(graph):
                 while max_deviation > 4:
                     x_parts = np.array_split(np.array(x), splits)
                     y_parts = np.array_split(np.array(y), splits)
+                    weight_parts = np.array_split(np.array(weights), splits)
                     corrected_route = dict()
-                    for x_part, y_part in zip(x_parts, y_parts):
+                    for x_part, y_part, w_part in zip(x_parts, y_parts, weight_parts):
                         if len(x_part) > 0:
                             if max(x_part) - min(x_part) >= max(y_part) - min(y_part):
-                                optimized = np.polyfit(x_part, y_part, 3)
+                                optimized = np.polyfit(
+                                    x_part, y_part, 3, w=w_part)
                                 polynomial = np.poly1d(optimized)
                                 corrected_route.update(
                                     {point: (point[0], polynomial(point[0])) for point in zip(x_part, y_part)})
                             else:
-                                optimized = np.polyfit(y_part, x_part, 3)
+                                optimized = np.polyfit(
+                                    y_part, x_part, 3, w=w_part)
                                 polynomial = np.poly1d(optimized)
                                 corrected_route.update(
                                     {point: (polynomial(point[1]), point[1]) for point in zip(x_part, y_part)})
@@ -418,6 +425,83 @@ def smooth_graph(graph):
                         nx.set_edge_attributes(graph, {(point, neighbor): {
                             'length': math.dist(point, neighbor)}})
     graph.remove_edges_from(nx.selfloop_edges(graph))
+
+
+def get_angle(p1, p2, midpoint):
+    a = math.dist(p1, midpoint)
+    b = math.dist(p2, midpoint)
+    c = math.dist(p1, p2)
+    if abs((a**2 + b**2 - c**2) / (2 * a * b)) > 1:
+        return math.pi
+    return math.acos((a**2 + b**2 - c**2) / (2 * a * b))
+
+
+def get_intersection(p1, p2, p3, p4):
+    x1, y1 = p1
+    x2, y2 = p2
+    x3, y3 = p3
+    x4, y4 = p4
+    den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if den == 0:
+        return None
+    x = ((x1 * y2 - y1 * x2) * (x3 - x4) -
+         (x1 - x2) * (x3 * y4 - y3 * x4)) / den
+    y = ((x1 * y2 - y1 * x2) * (y3 - y4) -
+         (y1 - y2) * (x3 * y4 - y3 * x4)) / den
+    return x, y
+
+
+def fix_junctions(graph):
+    junctions = [node for node in graph.nodes if graph.degree(node) > 2]
+    corrections = dict()
+    for junction in tqdm(junctions):
+        if graph.degree(junction) == 3:
+            p0, p1, p2 = graph[junction]
+            if graph.degree(p0) != 2 or graph.degree(p1) != 2 or graph.degree(p2) != 2:
+                continue
+            p0_neighbor = [neighbor for neighbor in graph[p0]
+                           if neighbor != junction][0]
+            p1_neighbor = [neighbor for neighbor in graph[p0]
+                           if neighbor != junction][0]
+            p2_neighbor = [neighbor for neighbor in graph[p2]
+                           if neighbor != junction][0]
+            angle_p0_p1 = abs(math.pi - get_angle(p0_neighbor, p0, p1))
+            angle_p0_p2 = abs(math.pi - get_angle(p0_neighbor, p0, p2))
+            angle_p1_p2 = abs(math.pi - get_angle(p1_neighbor, p1, p2))
+            if angle_p0_p1 <= angle_p0_p2 and angle_p0_p1 <= angle_p1_p2:
+                corrections[junction] = get_intersection(
+                    p0, p1, p2, junction)
+            elif angle_p0_p2 <= angle_p0_p1 and angle_p0_p2 <= angle_p1_p2:
+                corrections[junction] = get_intersection(
+                    p0, p2, p1, junction)
+            else:
+                corrections[junction] = get_intersection(
+                    p1, p2, p0, junction)
+        elif graph.degree(junction) == 4:
+            best_matches = []
+            passed = set()
+            for neighbor in graph[junction]:
+                for second_neighbor in graph[junction]:
+                    if neighbor != second_neighbor and (neighbor, second_neighbor) not in passed and (second_neighbor, neighbor) not in passed:
+                        best_matches.append(
+                            (abs(math.pi - get_angle(neighbor, second_neighbor, junction)), neighbor, second_neighbor))
+                        passed.add((neighbor, second_neighbor))
+            best_matches.sort(key=lambda x: x[0])
+            p0, p1 = best_matches[0][1], best_matches[0][2]
+            p2, p3 = [node for node in graph[junction] if node not in [p0, p1]]
+            corrections[junction] = get_intersection(p0, p1, p2, p3)
+        else:
+            assert(False)
+
+    nx.relabel_nodes(graph, corrections, copy=False)
+    junctions = [node for node in graph.nodes if graph.degree(node) > 2]
+    for junction in junctions:
+        incident_segment = graph.nodes[junction]['incident_segment']
+        nx.set_node_attributes(graph, {junction: {
+            'distance_to_source': distance_to_edge(junction, incident_segment[0], incident_segment[1])}})
+        for neighbor in graph[junction]:
+            nx.set_edge_attributes(graph, {(junction, neighbor): {
+                'length': math.dist(junction, neighbor)}})
 
 
 def draw_graph(image, graph, window_name, save_path=None):
@@ -443,13 +527,6 @@ IRIT_POLYLINE = """\
         ]
 """
 IRIT_POINT = "          [{attr}{x} {y} {z}]"
-
-
-def get_angle(p1, p2, midpoint):
-    a = math.dist(p1, midpoint)
-    b = math.dist(p2, midpoint)
-    c = math.dist(p1, p2)
-    return math.acos((a**2 + b**2 - c**2) / (2 * a * b))
 
 
 def get_polylines(graph):
@@ -603,6 +680,10 @@ def main():
     print("Smoothing graph...")
     smooth_graph(graph)
     print("Finished smoothing graph")
+
+    # print("Fixing junctions")
+    # fix_junctions(graph)
+    # print("Finished fixing junctions")
 
     print("Reducing graph...")
     reduce_graph(graph, args.reduction_proximity)
