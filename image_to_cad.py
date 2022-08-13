@@ -456,23 +456,29 @@ def get_polylines(graph):
     print("\tGetting logical next...")
     junctions = [node for node in graph.nodes if graph.degree(node) > 2]
     logical_next = dict()
-    for junction in tqdm(junctions):
-        logical_next[junction] = dict()
-        for neighbor in graph[junction]:
-            if neighbor in logical_next[junction]:
-                continue
-            best_match = None
-            for second_neighbor in graph[junction]:
-                if second_neighbor != neighbor:
-                    if best_match is None or abs(math.pi - get_angle(neighbor, second_neighbor, junction)) < abs(math.pi - get_angle(neighbor, best_match, junction)):
-                        best_match = second_neighbor
-            logical_next[junction][neighbor] = best_match
-            logical_next[junction][best_match] = neighbor
-    polylines = []
-    edges = list(graph.edges())
     endpoint = [(node, list(graph[node])[0])
                 for node in graph.nodes if graph.degree(node) == 1]
     candidates = endpoint
+    for junction in tqdm(junctions):
+        logical_next[junction] = dict()
+        best_matches = []
+        passed = set()
+        for neighbor in graph[junction]:
+            for second_neighbor in graph[junction]:
+                if neighbor != second_neighbor and (neighbor, second_neighbor) not in passed and (second_neighbor, neighbor) not in passed:
+                    best_matches.append(
+                        (abs(math.pi - get_angle(neighbor, second_neighbor, junction)), neighbor, second_neighbor))
+                    passed.add((neighbor, second_neighbor))
+        for match in sorted(best_matches):
+            if match[1] not in logical_next[junction] and match[2] not in logical_next[junction]:
+                logical_next[junction][match[1]] = match[2]
+                logical_next[junction][match[2]] = match[1]
+        for neighbor in graph[junction]:
+            if neighbor not in logical_next[junction]:
+                logical_next[junction][neighbor] = None
+                candidates.append((junction, neighbor))
+    polylines = []
+    edges = list(graph.edges())
     print("\tPlotting...")
     with tqdm(total=len(edges)) as pbar:
         while len(edges) > 0:
