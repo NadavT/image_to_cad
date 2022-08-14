@@ -462,45 +462,27 @@ def get_angle(p1, p2, midpoint):
 
 
 def get_polylines(graph):
-    print("\tGetting logical next...")
     junctions = [node for node in graph.nodes if graph.degree(node) > 2]
-    logical_next = dict()
     endpoint = [(node, list(graph[node])[0])
                 for node in graph.nodes if graph.degree(node) == 1]
     candidates = endpoint
-    for junction in tqdm(junctions):
-        logical_next[junction] = dict()
-        best_matches = []
-        passed = set()
+    for junction in junctions:
         for neighbor in graph[junction]:
-            for second_neighbor in graph[junction]:
-                if neighbor != second_neighbor and (neighbor, second_neighbor) not in passed and (second_neighbor, neighbor) not in passed:
-                    best_matches.append(
-                        (abs(math.pi - get_angle(neighbor, second_neighbor, junction)), neighbor, second_neighbor))
-                    passed.add((neighbor, second_neighbor))
-        for match in sorted(best_matches):
-            if match[1] not in logical_next[junction] and match[2] not in logical_next[junction]:
-                logical_next[junction][match[1]] = match[2]
-                logical_next[junction][match[2]] = match[1]
-        for neighbor in graph[junction]:
-            if neighbor not in logical_next[junction]:
-                logical_next[junction][neighbor] = None
-                candidates.append((junction, neighbor))
+            candidates.append((junction, neighbor))
     polylines = []
     edges = list(graph.edges())
+    original_len = len(edges)
+    marked = set()
     print("\tPlotting...")
-    with tqdm(total=len(edges)) as pbar:
-        while len(edges) > 0:
+    with tqdm(total=original_len) as pbar:
+        while len(marked) < original_len:
             if len(candidates) > 0:
                 edge = candidates.pop()
-                if edge in edges:
-                    edges.remove(edge)
-                elif (edge[1], edge[0]) in edges:
-                    edges.remove((edge[1], edge[0]))
-                else:
-                    continue
             else:
                 edge = edges.pop()
+            if edge in marked or (edge[1], edge[0]) in marked:
+                continue
+            marked.add(edge)
             pbar.update(1)
             line = [edge[0], edge[1]]
             if graph.degree(edge[1]) == 1:
@@ -508,24 +490,16 @@ def get_polylines(graph):
             prev = edge[1]
             next_node = [node for node in graph[edge[1]] if node != edge[0]][0]
             while next_node is not None:
-                if (prev, next_node) in edges:
+                if (prev, next_node) not in marked and (next_node, prev) not in marked:
                     edge = (prev, next_node)
-                elif (next_node, prev) in edges:
-                    edge = (next_node, prev)
                 else:
                     break
                 line.append(next_node)
-                edges.remove(edge)
+                marked.add(edge)
                 pbar.update(1)
                 if graph.degree(next_node) == 2:
                     next_node, prev = [
                         node for node in graph[next_node] if node != prev][0], next_node
-                elif graph.degree(next_node) > 2:
-                    unused = [node for node in graph[next_node] if ((
-                        node, next_node) in edges or (next_node, node) in edges) and node != logical_next[next_node][prev]]
-                    if len(unused) == 1:
-                        candidates.append((next_node, unused[0]))
-                    next_node, prev = logical_next[next_node][prev], next_node
                 else:
                     next_node = None
             polylines.append(line)
