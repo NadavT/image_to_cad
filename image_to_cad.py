@@ -624,10 +624,14 @@ def main():
     draw_graph(image.copy(), graph, 'final_result', "results/final_result.png")
 
     end_time = datetime.now()
-
     print(f"Finished! Calculated in {(end_time - start_time)}")
+
+    start_time = datetime.now()
     print("exporting...")
     export_irit(graph, args.irit_export_path)
+    end_time = datetime.now()
+    print(f"Finished! Exported in {(end_time - start_time)}")
+
     print("press Escape key to exit")
     while cv2.waitKey(0) != 27:  # Escape key
         pass
