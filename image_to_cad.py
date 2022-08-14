@@ -88,6 +88,7 @@ def preprocess_image(image, scale_factor, islands_threshold):
 
 
 def calculate_voronoi(contours, width, height):
+    start_time = datetime.now()
     # Create voronoi diagram
     image_cont = np.ones((height, width)) * 255
     print("\tCreating voronoi diagram")
@@ -107,7 +108,8 @@ def calculate_voronoi(contours, width, height):
 
     print("\tFinished adding segments")
     pv.Construct()
-    print("\tFinished construction")
+    end_time = datetime.now()
+    print(f"\tFinished construction in {(end_time - start_time)}")
     return pv, segments
 
 
