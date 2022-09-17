@@ -350,8 +350,8 @@ def collapse_junctions(graph, threshold):
                         graph.remove_node(node)
                     nx.contracted_nodes(graph, junction, neighbor,
                                         self_loops=False, copy=False)
-                    midpoint = (junction[0] + neighbor[0]) / \
-                        2, (junction[1] + neighbor[1]) / 2
+                    midpoint = int((junction[0] + neighbor[0]) / \
+                        2), int((junction[1] + neighbor[1]) / 2)
                     nx.relabel_nodes(graph, {junction: midpoint}, copy=False)
                     incident_segment = graph.nodes[midpoint]['incident_segment']
                     nx.set_node_attributes(graph, {midpoint: {
@@ -441,17 +441,15 @@ def draw_graph(image, graph, window_name, save_path=None):
 
 IRIT_TEMPLATE = """\
 [OBJECT SCENE
-    [OBJECT POLY
 {polylines}
-    ]
 ]
 """
 IRIT_POLYLINE = """\
-        [POLYLINE {amount}
+    [CURVE BEZIER {amount} E3
 {points}
-        ]
+    ]
 """
-IRIT_POINT = "          [{attr}{x} {y} {z}]"
+IRIT_POINT = "      [{attr}{x} {y} {z}]"
 
 
 def get_angle(p1, p2, midpoint):
@@ -487,23 +485,25 @@ def get_polylines(graph):
             marked.add(edge)
             pbar.update(1)
             line = [edge[0], edge[1]]
-            if graph.degree(edge[1]) == 1:
+            if graph.degree(edge[1]) != 2:
+                polylines.append(line)
                 continue
             prev = edge[1]
             next_node = [node for node in graph[edge[1]] if node != edge[0]][0]
-            while next_node is not None:
-                if (prev, next_node) not in marked and (next_node, prev) not in marked:
-                    edge = (prev, next_node)
-                else:
-                    break
-                line.append(next_node)
-                marked.add(edge)
-                pbar.update(1)
-                if graph.degree(next_node) == 2:
-                    next_node, prev = [
-                        node for node in graph[next_node] if node != prev][0], next_node
-                else:
-                    next_node = None
+            if graph.degree(next_node) == 2:
+                while next_node is not None:
+                    if (prev, next_node) not in marked and (next_node, prev) not in marked:
+                        edge = (prev, next_node)
+                    else:
+                        break
+                    line.append(next_node)
+                    marked.add(edge)
+                    pbar.update(1)
+                    if graph.degree(next_node) == 2:
+                        next_node, prev = [
+                            node for node in graph[next_node] if node != prev][0], next_node
+                    else:
+                        next_node = None
             polylines.append(line)
     return polylines
 
@@ -520,7 +520,7 @@ def export_irit(graph, save_path):
     junctions = [node for node in graph.nodes if graph.degree(node) > 2]
     for polyline in get_polylines(graph):
         irit_polylines += IRIT_POLYLINE.format(amount=len(polyline),
-                                               points='\n'.join([IRIT_POINT.format(attr="[junction] " if point in junctions else "", x=point[0], y=point[1], z=graph.nodes[point]['distance_to_source']) for point in polyline]))
+                                               points='\n'.join([IRIT_POINT.format(attr="" if point in junctions else "", x=point[0], y=point[1], z=0) for point in polyline]))
     with open(save_path, 'w') as file:
         file.write(IRIT_TEMPLATE.format(polylines=irit_polylines))
 
@@ -585,16 +585,16 @@ def main():
     draw_graph(image.copy(), graph,
                'Before smoothing', 'results/before_smoothing.png')
 
-    print("Smoothing graph...")
-    smooth_graph(graph)
-    print("Finished smoothing graph")
+    # print("Smoothing graph...")
+    # smooth_graph(graph)
+    # print("Finished smoothing graph")
 
-    print("Reducing graph...")
-    reduce_graph(graph, args.reduction_proximity)
-    print("Finished reducing graph")
-    print("remove hanging...")
-    graph = remove_hanging_by_graph(graph, args.hanging_leaf_threshold)
-    print("Finished removing hanging")
+    # print("Reducing graph...")
+    # reduce_graph(graph, args.reduction_proximity)
+    # print("Finished reducing graph")
+    # print("remove hanging...")
+    # graph = remove_hanging_by_graph(graph, args.hanging_leaf_threshold)
+    # print("Finished removing hanging")
 
     print("Drawing result...")
     draw_graph(image.copy(), graph, 'final_result', "results/final_result.png")
