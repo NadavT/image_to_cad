@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finding the medial axis &mdash; Varying width Project  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Overview" href="../index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Varying width Project
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Finding the medial axis</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#goal">Goal</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#image-preprocessing">Image preprocessing</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#removing-islands">Removing islands</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#adding-border">Adding border</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#resizing">Resizing</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#edge-detection">Edge detection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#voronoi-diagram">Voronoi diagram</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#final-filtering">Final filtering</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#reducing-graph">Reducing graph</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#removing-hanging-edges">Removing hanging edges</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#collapsing-junctions">Collapsing junctions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#smoothing-junctions">Smoothing junctions</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Varying width Project</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+      <li class="breadcrumb-item active">Finding the medial axis</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pages/finding_the_medial_axis.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="finding-the-medial-axis">
+<h1>Finding the medial axis<a class="headerlink" href="#finding-the-medial-axis" title="Permalink to this heading"></a></h1>
+<section id="goal">
+<h2>Goal<a class="headerlink" href="#goal" title="Permalink to this heading"></a></h2>
+<p>We would like to find the medial axis of a given image. To do so, we use a couple techniques in order to clean up the image and find the medial axis.</p>
+<p>Currently our approach uses the following techniques:</p>
+<ol class="arabic simple">
+<li><p><a class="reference internal" href="#image-preprocessing"><span class="std std-doc"><strong>Image Preprocessing</strong></span></a>: We use a series of filters to clean up the image before running further algorithms.</p></li>
+<li><p><a class="reference internal" href="#edge-detection"><span class="std std-doc"><strong>Edge detection</strong></span></a>: We use opencv to detect edges in the image (findContours), we also apply canny edge detection to find the edges of the image.</p></li>
+<li><p><a class="reference internal" href="#voronoi-diagram"><span class="std std-doc"><strong>Voronoi Diagram</strong></span></a>: We calculate and use a voronoi diagram (as a graph).</p></li>
+<li><p><a class="reference internal" href="#final-filtering"><span class="std std-doc"><strong>Final filtering</strong></span></a>: We apply a series of algorithms to clean up the voronoi diagram and find the medial axis.</p></li>
+</ol>
+<p>for example:</p>
+<p><img alt="Example" src="../_images/medial_axis.png" /></p>
+<p>The medial axis of the image is in red/pink.</p>
+</section>
+<section id="image-preprocessing">
+<h2>Image preprocessing<a class="headerlink" href="#image-preprocessing" title="Permalink to this heading"></a></h2>
+<p>We use a series of filters to clean up the image before running further algorithms.</p>
+<section id="removing-islands">
+<h3>Removing islands<a class="headerlink" href="#removing-islands" title="Permalink to this heading"></a></h3>
+<p>First of all we take the image and remove any islands (small black patches) from the image. We do this by using the following algorithm:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>For each pixel in the image, if the pixel is black and we did not already used it:
+	count the number of black pixels we can reach from that pixel using other black pixels.
+	if the number of black pixels is less than a threshold:
+		paint all the black pixels we went over to white.
+</pre></div>
+</div>
+<p>Using dynamic programing we can reduce the runtime greatly and do it in <em>O(n)</em> where <em>n</em> is the number of pixels in the image.</p>
+</section>
+<section id="adding-border">
+<h3>Adding border<a class="headerlink" href="#adding-border" title="Permalink to this heading"></a></h3>
+<p>If a given flag is given we add a white border (2 pixel wide rectangle) to the picture (this connects all the borders of the image and help with further processing of the voronoi later on if the original image uses the edges of the image as it’s border).</p>
+</section>
+<section id="resizing">
+<h3>Resizing<a class="headerlink" href="#resizing" title="Permalink to this heading"></a></h3>
+<p>In order to get a more accurate result for the medial axis we scale the image up to be more precise.</p>
+<p>We use bilinear interpolation for the scaling as we saw it produced good results.</p>
+</section>
+</section>
+<section id="edge-detection">
+<h2>Edge detection<a class="headerlink" href="#edge-detection" title="Permalink to this heading"></a></h2>
+<p>We use a canny filter and then run findContours using openCV (as recommended by openCV) to detect edges of the image.</p>
+<p>The resulting contours:
+<img alt="Counturs" src="../_images/contours.png" /></p>
+</section>
+<section id="voronoi-diagram">
+<h2>Voronoi diagram<a class="headerlink" href="#voronoi-diagram" title="Permalink to this heading"></a></h2>
+<p>We run a voronoi diagram algorithm (using boost) to get the following diagrams (Removing all segments which are not in the original image white regions):</p>
+<p><img alt="Voronoi" src="../_images/voronoi.png" /></p>
+<p><img alt="Voronoi2" src="../_images/voronoi2.png" /></p>
+</section>
+<section id="final-filtering">
+<h2>Final filtering<a class="headerlink" href="#final-filtering" title="Permalink to this heading"></a></h2>
+<p>We process the resulting voronoi diagram as a graph.</p>
+<section id="reducing-graph">
+<h3>Reducing graph<a class="headerlink" href="#reducing-graph" title="Permalink to this heading"></a></h3>
+<p>We reduce the graph by removing small edges (given a threshold) and contracting the vertices of each small edge, we do so iteratively until we can’t reduce the graph anymore.</p>
+<p>This enables us to work with a much smaller graph and process it faster.</p>
+</section>
+<section id="removing-hanging-edges">
+<h3>Removing hanging edges<a class="headerlink" href="#removing-hanging-edges" title="Permalink to this heading"></a></h3>
+<p>We iteratively go over each leaf of the graph and walk until we reach a vertex with more than 2 edges (a junction), we then remove the leaf and all the edges we went over if the path is shorter than a given threshold.</p>
+<p>The resulting graph is:
+<img alt="Removed hanging edges" src="../_images/removed_hanging.png" /></p>
+</section>
+<section id="collapsing-junctions">
+<h3>Collapsing junctions<a class="headerlink" href="#collapsing-junctions" title="Permalink to this heading"></a></h3>
+<p>After the previous step we have some artificats left to deal with, as we can see in the following image:</p>
+<p><img alt="Junctions problem" src="../_images/junctions_problem.png" /></p>
+<p>So we want to collapse junctions which are close to each other (given a threshold) and make them a single junction (using a graph walk between the two junctions and taking the average point when contracting the edge).
+The</p>
+</section>
+<section id="smoothing-junctions">
+<h3>Smoothing junctions<a class="headerlink" href="#smoothing-junctions" title="Permalink to this heading"></a></h3>
+<p>We found because of the noise generated from approximating the junctions we should smooth the junctions a bit by
+making all the neighbors of a junction be of at least a certain distance from the junction (given a threshold), all vertices (that aren’t junction) which are not at least the threshold distance from the junction are removed (creating a one long edge from the two edges which went out from the removed vertex).</p>
+<p>The resulting graph is:
+<img alt="Smoothed junctions" src="../_images/final_graph_processing.png" /></p>
+<p>And we are done with the graph processing and got a medial axis!</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../index.html" class="btn btn-neutral float-left" title="Overview" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Nadav Tur.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
