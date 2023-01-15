@@ -9,7 +9,7 @@ Currently our approach uses the following techniques:
 1. [**Image Preprocessing**](#image-preprocessing): We use a series of filters to clean up the image before running further algorithms.
 2. [**Edge detection**](#edge-detection): We use opencv to detect edges in the image (findContours), we also apply canny edge detection to find the edges of the image.
 3. [**Voronoi Diagram**](#voronoi-diagram): We calculate and use a voronoi diagram (as a graph).
-4. **Final filtering**: We apply a series of algorithms to clean up the voronoi diagram and find the medial axis.
+4. [**Final filtering**](#final-filtering): We apply a series of algorithms to clean up the voronoi diagram and find the medial axis.
 
 for example:
 
