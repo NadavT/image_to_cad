@@ -14,4 +14,3 @@ dependencies:
   - myst-parser
   - linkify-it-py
   - markdown-it-py
-  - pygments-lexer-pseudocode

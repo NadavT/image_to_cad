@@ -10,4 +10,3 @@ sphinx-rtd-theme==1.0.0
 linkify-it-py==2.0.0
 sphinxcontrib-bibtex==2.4.2
 markdown-it-py==2.1.0
-pygments-lexer-pseudocode==2.0.1

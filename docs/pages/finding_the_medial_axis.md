@@ -25,7 +25,7 @@ We use a series of filters to clean up the image before running further algorith
 
 First of all we take the image and remove any islands (small black patches) from the image. We do this by using the following algorithm:
 
-```{code-block} algo
+```{code-block} text
 For each pixel in the image, if the pixel is black and we did not already used it:
 	count the number of black pixels we can reach from that pixel using other black pixels.
 	if the number of black pixels is less than a threshold:
